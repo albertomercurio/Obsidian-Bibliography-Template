@@ -1,7 +1,7 @@
 <%* 
-const bibtex_string = await tp.system.prompt("Please enter a the BibTeX citation:", null, false, true);
+const doi_string = await tp.system.prompt("Please enter the DOI: (e.g., 10.1103/PhysRevLett.130.123601)", null, false, true);
 
-const bibtex_parser = await tp.user.get_bibtex_data(bibtex_string);
+const bibtex_parser = await tp.user.get_bibtex_data(doi_string);
 
 const type = bibtex_parser.parsedData.type;
 const cite_key = bibtex_parser.generateCitationKey();
@@ -60,7 +60,7 @@ tR += `> [!ABSTRACT] Abstract\n> ${abstract}`
 ### PDF: 
 
 ### Tasks
-<%* tR += `- [ ] 🔽 To Comment` %>
+<%* tR += `- [ ] To Comment 🔽` %>
 
 
 ## Comments
