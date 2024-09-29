@@ -119,11 +119,13 @@ class BibTexParser {
     return value.slice(1); // Remove the first curly brace
   }
 
-  // Remove all the characters that are not supported in Obsidian note names
+  // Remove all the characters that are not supported in Obsidian note names and in Latex citation keys
   removeSpecialCharacters(str) {
-    const forbiddenChars = /[*"\\\/<>:|?]/g;
+    // This regex removes all unwanted characters for a LaTeX citation key
+    const forbiddenChars = /[^\w\d]/g; // Keep only word characters (a-z, A-Z, 0-9) and underscores
     return str.replace(forbiddenChars, '');
   }
+
 
   generateCitationKey() {
     const author = this.parsedAuthors && this.parsedAuthors.length > 0 ? removeSpaces(removeAccents(this.parsedAuthors[0].lastName)) : 'Unknown';
