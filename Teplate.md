@@ -6,6 +6,7 @@ const bibtex_parser = await tp.user.get_bibtex_data(doi_string);
 const type = bibtex_parser.parsedData.type;
 const cite_key = bibtex_parser.generateCitationKey();
 const title = bibtex_parser.getTitle_UTF8();
+const booktitle = bibtex_parser.parsedData.booktitle;
 const authors = bibtex_parser.getAuthorsYAML();
 const journal = bibtex_parser.parsedData.journal;
 const year = bibtex_parser.parsedData.year;
@@ -14,10 +15,12 @@ const doi = bibtex_parser.parsedData.doi;
 const url = bibtex_parser.parsedData.url;
 const fullBibtex = bibtex_parser.toBibTex();
 
+const authors_list = bibtex_parser.parsedAuthors;
+
 if (type === 'article') {
-  await tp.file.move("/Research/Bibliography/Articles/" + cite_key);
-} else if (type === 'book') {
-  await tp.file.move("/Research/Bibliography/Books/" + cite_key);
+  await tp.file.move(`/Research/Bibliography/Articles/${title} - (${year}) - ${authors_list[0].lastName}`);
+} else if (type === 'book' || type === 'inbook') {
+  await tp.file.move(`/Research/Bibliography/Books/${title} - (${year}) - ${authors_list[0].lastName}`);
 }
 
 tR += "---\n"; 
@@ -28,6 +31,9 @@ if (cite_key !== undefined) {
   tR += `cite_key: ${cite_key}\n`;
 }
 tR += `title: "${title}"\n`;
+if (booktitle !== undefined) {
+  tR += `booktitle: "${booktitle}"\n`;
+}
 tR += `authors: \n${authors}\n`;
 tR += `year: ${year}\n`;
 if (publisher !== undefined) {
@@ -59,8 +65,11 @@ tR += `> [!ABSTRACT] Abstract\n> ${abstract}`
 
 ### PDF: 
 
+
+
 ### Tasks
 <%* tR += `- [ ] To Comment 🔽` %>
+<%* tR += `- [ ] Add PDF  🔽` %>
 
 
 ## Comments
