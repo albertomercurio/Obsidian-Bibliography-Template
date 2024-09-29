@@ -18,9 +18,9 @@ const fullBibtex = bibtex_parser.toBibTex();
 const authors_list = bibtex_parser.parsedAuthors;
 
 if (type === 'article') {
-  await tp.file.move(`/Research/Bibliography/Articles/${title} - (${year}) - ${authors_list[0].lastName}`);
+  await tp.file.move("/Research/Bibliography/Articles/" + bibtex_parser.removeSpecialCharacters(`${title} - (${year}) - ${authors_list[0].lastName}`));
 } else if (type === 'book' || type === 'inbook') {
-  await tp.file.move(`/Research/Bibliography/Books/${title} - (${year}) - ${authors_list[0].lastName}`);
+  await tp.file.move("/Research/Bibliography/Books/" + bibtex_parser.removeSpecialCharacters(`${title} - (${year}) - ${authors_list[0].lastName}`));
 }
 
 tR += "---\n"; 
