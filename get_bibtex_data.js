@@ -119,11 +119,24 @@ class BibTexParser {
     return value.slice(1); // Remove the first curly brace
   }
 
+  // Remove all the characters that are not supported in Obsidian note names
+  removeSpecialCharacters(str) {
+    const forbiddenChars = /[*"\\\/<>:|?]/g;
+    return str.replace(forbiddenChars, '');
+  }
+
+  removeSpecialCharactersForLatex(str) {
+    // This regex removes all unwanted characters for a LaTeX citation key
+    const forbiddenChars = /[^\w\d]/g; // Keep only word characters (a-z, A-Z, 0-9) and underscores
+    return str.replace(forbiddenChars, '');
+}
+
+
   generateCitationKey() {
     const author = this.parsedAuthors && this.parsedAuthors.length > 0 ? removeSpaces(removeAccents(this.parsedAuthors[0].lastName)) : 'Unknown';
     const year = this.parsedData.year || 'Unknown';
     const firstWordTitle = this.parsedData.title ? removeCurlyBraces(removeSpaces(removeAccents(this.parsedData.title.split(' ')[0]))) : 'Unknown';
-    return removeSpecialCharacters(`${author}${year}${firstWordTitle}`);
+    return this.removeSpecialCharactersForLatex(`${author}${year}${firstWordTitle}`);
   }
 
   toBibTex() {
@@ -172,12 +185,6 @@ async function getBibtexFromDOI(doi) {
   } catch (error) {
     console.error('Error:', error);
   }
-}
-
-// Remove all the characters that are not supported in Obsidian note names
-function removeSpecialCharacters(str) {
-  const forbiddenChars = /[*"\\\/<>:|?]/g;
-  return str.replace(forbiddenChars, '');
 }
 
 function removeCurlyBraces(str) {
