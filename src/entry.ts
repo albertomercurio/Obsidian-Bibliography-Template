@@ -14,14 +14,18 @@ class BibliographyEntry {
 	type: "article";
 	citeKey?: string;
 
-    markdownMetadata(): string {
-        throw new Error("the 'markdownMetadata' method must be overridden.");
-    }
+	markdownMetadata(): string {
+		throw new Error("the 'markdownMetadata' method must be overridden.");
+	}
 
-    toMarkdown(): string {
-        let md = this.markdownMetadata();
-        return md;
-    }
+	toMarkdown(): string {
+		let md = this.markdownMetadata();
+		return md;
+	}
+
+	getFileName(): string {
+		throw new Error("the 'getFileName' method must be overridden.");
+	}
 }
 
 class ArticleBE extends BibliographyEntry {
@@ -64,28 +68,32 @@ class ArticleBE extends BibliographyEntry {
 		let year = this.year;
 		let firstWordTitle = this.title.split(" ")[0] || "Unknown";
 		this.citeKey = `${firstAuthor}${year}${firstWordTitle}`;
-	};
+	}
 
 	markdownMetadata(): string {
-        let authors = this.author.map((a) => {
-            let s = `  - given: '${a.given}'\n`
-            .concat(`    family: '${a.family}'\n`)
-            .concat(a.prefix ? `    prefix: '${a.prefix}'\n` : "")
-            .concat(a.suffix ? `    suffix: '${a.suffix}'\n` : "");
-            return s;
-        })
+		let authors = this.author.map((a) => {
+			let s = `  - given: '${a.given}'\n`
+				.concat(`    family: '${a.family}'\n`)
+				.concat(a.prefix ? `    prefix: '${a.prefix}'\n` : "")
+				.concat(a.suffix ? `    suffix: '${a.suffix}'\n` : "");
+			return s;
+		});
 
 		let md = "---\n"
-            .concat(`title: '${this.title}'\n`)
-            .concat(`author: \n`)
-            .concat(authors.join(""))
-            .concat(`journaltitle: '${this.journaltitle}'\n`)
-            .concat(this.year ? `year: ${this.year}\n` : "")
-            .concat(this.date ? `date: ${this.date.toISOString()}\n` : "")
-            .concat(this.doi ? `doi: '${this.doi}'\n` : "")
-            .concat("---\n");
+			.concat(`title: '${this.title}'\n`)
+			.concat(`author: \n`)
+			.concat(authors.join(""))
+			.concat(`journaltitle: '${this.journaltitle}'\n`)
+			.concat(this.year ? `year: ${this.year}\n` : "")
+			.concat(this.date ? `date: ${this.date.toISOString()}\n` : "")
+			.concat(this.doi ? `doi: '${this.doi}'\n` : "")
+			.concat("---\n");
 		return md;
-	};
+	}
+
+	getFileName(): string {
+		return `${this.title} - ${this.year} - ${this.author[0].family}`;
+	}
 
 	static fromCrossrefJson(data: CrossrefResponse): ArticleBE {
 		let author = data.author.map((a) => {
@@ -111,10 +119,10 @@ class ArticleBE extends BibliographyEntry {
 		let doi = data.DOI;
 
 		return new ArticleBE(author, title, journaltitle, year, date, doi);
-	};
+	}
 }
 
-const fetchEntryFromDoi = async (doi: string): Promise<any> => {
+const fetchEntryFromDoi = async (doi: string): Promise<BibliographyEntry> => {
 	if (!isDoi(doi)) {
 		throw new Error("The input doesn't look like a valid DOI.");
 	}
@@ -152,3 +160,4 @@ const CrossrefJsonToEntry = (data: CrossrefResponse) => {
 };
 
 export { fetchEntryFromDoi };
+export type { BibliographyEntry };
