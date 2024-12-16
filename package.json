@@ -1,0 +1,24 @@
+{
+	"name": "obsidian-bibiliography",
+	"version": "0.1.0",
+	"description": "A plugin to add a bibliography manager to your vault.",
+	"main": "src/main.js",
+	"scripts": {
+		"dev": "node scripts/esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node scripts/esbuild.config.mjs production",
+		"version": "node scripts/version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "GPL-3.0",
+	"devDependencies": {
+		"@types/node": "^16.11.6",
+		"@typescript-eslint/eslint-plugin": "5.29.0",
+		"@typescript-eslint/parser": "5.29.0",
+		"builtin-modules": "3.3.0",
+		"esbuild": "0.17.3",
+		"obsidian": "latest",
+		"tslib": "2.4.0",
+		"typescript": "4.7.4"
+	}
+}

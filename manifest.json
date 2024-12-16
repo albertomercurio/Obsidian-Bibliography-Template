@@ -1,0 +1,9 @@
+{
+	"id": "obsidian-bibliography",
+	"name": "Obsidian Bibliography",
+	"version": "0.1.0",
+	"minAppVersion": "0.15.0",
+	"description": "A plugin to add a bibliography manager to your vault.",
+	"author": "Lorenzo Fioroni and Alberto Mercurio",
+	"isDesktopOnly": false
+}
