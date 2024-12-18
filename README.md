@@ -41,7 +41,7 @@ Some changes might require a full restart of Obsidian to take effect.
 Here is a quick overview of the plugin structure (the relevant files are in the `src` folder):
 
 - `main.ts` is the entry point of the plugin, where it is initialized. 
-Currently, it opens a connection to the IndexedDB database via the `DatabaseManager` class when the plugin is loaded, and closes it when the plugin is unloaded.
+Currently, it opens a connection to the IndexedDB database via the `DatabaseManager` class when the plugin is loaded, and closes it when the plugin is unloaded. Moreover, it sets up the commands and the views of the plugin.
 
 - `utils.ts` contains utility functions that are used throughout the plugin.
 
@@ -54,3 +54,7 @@ Currently, it opens a connection to the IndexedDB database via the `DatabaseMana
   - `bibliographyDatabase.ts` implements the IndexedDB via the `Dexie` library. It defines the structure of the database and provides methods to load and save the bibliography data to the filesystem.
 
   - `entry.ts` defines the structure of a bibliography entry and provides a history of changes to its structure to allow for database migrations.
+
+- `views/` contains all the code related to the user interface of the plugin.
+
+  - `BibliographyListView.ts` contains the code for displaying the list of bibliography entries in the editor area. Currently, it only displays a list of numbers, but it will be extended to show the actual entries.

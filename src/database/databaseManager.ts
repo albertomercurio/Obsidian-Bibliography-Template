@@ -27,4 +27,8 @@ export class DatabaseManager {
 		await this.db.exportDatabaseToFile();
 		await this.db.delete();
 	}
+
+	async getAllEntries() {
+		return this.db.entries.toCollection()
+	}
 }
