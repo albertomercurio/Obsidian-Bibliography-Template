@@ -47,13 +47,15 @@ Currently, it opens a connection to the IndexedDB database via the `DatabaseMana
 
 - `constants.ts` contains all the constants used in the plugin.
 
+- `random.ts` contains code to generate synthetic data for testing purposes.
+
 - `databse/` contains all the code related to working with the IndexedDB database.
 
   - `DatabaseManager.ts` is the main class that handles the database connection and provides methods to interact with the database. When the connection to the database is established, it tries to load the existing bibliography data from the plugin folder. Otherwise, a clean database is created. When the connection is closed, the state of the databased is exported to the plugin folder.
 
-  - `bibliographyDatabase.ts` implements the IndexedDB via the `Dexie` library. It defines the structure of the database and provides methods to load and save the bibliography data to the filesystem.
+  - `bibliographyDatabase.ts` implements the IndexedDB via the `Dexie` library. It defines the structure of the database and provides methods to load and save the bibliography data to the filesystem. If the database is brand new, it is populated with some example data for testing purposes.
 
-  - `entry.ts` defines the structure of a bibliography entry and provides a history of changes to its structure to allow for database migrations.
+  - `entry.ts` defines the structure of a bibliography entry and provides several subclasses for different types of entries (e.g., books, articles, etc.).
 
 - `views/` contains all the code related to the user interface of the plugin.
 
