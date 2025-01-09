@@ -1,0 +1,11 @@
+{
+	"id": "bibliography-manager",
+	"name": "Bibliography Manager",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "This is a bibliography manager for Obsidian.",
+	"author": "Alberto Mercurio and Lorenzo Fioroni",
+	"authorUrl": "https://obsidian.md",
+	"fundingUrl": "https://obsidian.md/pricing",
+	"isDesktopOnly": false
+}
