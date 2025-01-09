@@ -21,8 +21,14 @@ export default class DOIReferencePlugin extends Plugin {
         try {
             const metadata = await this.fetchDOIMetadata(doi);
             const cleanedMetadata = this.cleanMetadata(metadata);
-            const noteContent = this.generateNoteContent(cleanedMetadata);
-            this.createNewNote(cleanedMetadata.cite_key, noteContent);
+            
+			// Format the note title: Title - FirstAuthorSurname - Year
+			const safeTitle = cleanedMetadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
+			const firstAuthorSurname = cleanedMetadata.authors[0]?.surname || "Unknown Author";
+			const year = cleanedMetadata.year || "Unknown Year";
+			const noteTitle = `${safeTitle} - ${firstAuthorSurname} - ${year}`;
+			const noteContent = this.generateNoteContent(cleanedMetadata);
+            this.createNewNote(noteTitle, noteContent);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
         }
