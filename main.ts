@@ -49,39 +49,40 @@ export default class DOIReferencePlugin extends Plugin {
     }
 
     cleanMetadata(metadata: any) {
-        const authors = metadata.author
-            ? metadata.author.map(
-                  (author: { given: string; family: string }) =>
-                      `${author.family} ${author.given}`
-              )
-            : [];
-        return {
-            type: metadata.type || "article",
-            cite_key: `${metadata.author?.[0]?.family || "Unknown"}${
-                metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"
-            }${metadata.title?.split(" ")[0] || "Unknown"}`,
-            title: metadata.title || "Unknown Title",
-            authors,
-            year: metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown",
-            publisher: metadata.publisher || "Unknown Publisher",
-            journal: metadata["container-title"] || "Unknown Journal",
-            url: metadata.URL || "Unknown URL",
-            bibtex: this.generateBibTeX(metadata, authors),
-        };
-    }
+		const authors = metadata.author
+			? metadata.author.map((author: { given: string; family: string }) => ({
+				  name: author.given || "Unknown",
+				  surname: author.family || "Unknown",
+			  }))
+			: [];
+	
+		return {
+			type: metadata.type || "article",
+			cite_key: `${metadata.author?.[0]?.family || "Unknown"}${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}${metadata.title?.split(" ")[0] || "Unknown"}`,
+			title: metadata.title || "Unknown Title",
+			authors,
+			year: metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown",
+			publisher: metadata.publisher || "Unknown Publisher",
+			journal: metadata["container-title"] || "Unknown Journal",
+			url: metadata.URL || "Unknown URL",
+			bibtex: this.generateBibTeX(metadata, authors),
+		};
+	}
 
-    generateBibTeX(metadata: any, authors: string[]) {
-        return `@${metadata.type || "article"}{${metadata.author?.[0]?.family || "Unknown"}${
-            metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"
-        }${metadata.title?.split(" ")[0] || "Unknown"},
-  title = {${metadata.title}},
-  journal = {${metadata["container-title"] || "Unknown Journal"}},
-  year = {${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}},
-  publisher = {${metadata.publisher || "Unknown Publisher"}},
-  url = {${metadata.URL || "Unknown URL"}},
-  author = {${authors.join(" and ")}}
-}`;
-    }
+    generateBibTeX(metadata: any, authors: { name: string; surname: string }[]) {
+		const formattedAuthors = authors
+			.map((author) => `${author.surname}, ${author.name}`)
+			.join(" and ");
+	
+		return `@${metadata.type || "article"}{${metadata.author?.[0]?.family || "Unknown"}${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}${metadata.title?.split(" ")[0] || "Unknown"},
+	  title = {${metadata.title || "Unknown Title"}},
+	  journal = {${metadata["container-title"] || "Unknown Journal"}},
+	  year = {${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}},
+	  publisher = {${metadata.publisher || "Unknown Publisher"}},
+	  url = {${metadata.URL || "Unknown URL"}},
+	  author = {${formattedAuthors}}
+	}`;
+	}
 
     generateNoteContent(metadata: any) {
         return `---
@@ -89,7 +90,7 @@ type: ${metadata.type}
 cite_key: ${metadata.cite_key}
 title: ${metadata.title}
 authors:
-${metadata.authors.map((author: string) => `  - ${author}`).join("\n")}
+${metadata.authors.map((author: { name: string; surname: string }) => `  - ${author.surname} ${author.name}`).join("\n")}
 year: ${metadata.year}
 publisher: ${metadata.publisher}
 journal: ${metadata.journal}
