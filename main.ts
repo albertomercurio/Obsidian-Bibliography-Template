@@ -20,6 +20,7 @@ export default class DOIReferencePlugin extends Plugin {
 
         try {
             const metadata = await this.fetchDOIMetadata(doi);
+            const bibtex = await this.fetchDOIMetadataAsBibTeX(doi);
             const cleanedMetadata = this.cleanMetadata(metadata);
             
 			// Format the note title: Title - FirstAuthorSurname - Year
@@ -27,7 +28,7 @@ export default class DOIReferencePlugin extends Plugin {
 			const firstAuthorSurname = cleanedMetadata.authors[0]?.surname || "Unknown Author";
 			const year = cleanedMetadata.year || "Unknown Year";
 			const noteTitle = `${safeTitle} - ${firstAuthorSurname} - ${year}`;
-			const noteContent = this.generateNoteContent(cleanedMetadata);
+			const noteContent = this.generateNoteContent(cleanedMetadata, bibtex);
             this.createNewNote(noteTitle, noteContent);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
@@ -52,6 +53,20 @@ export default class DOIReferencePlugin extends Plugin {
             throw new Error(`Error: ${response.statusText}`);
         }
         return await response.json();
+    }
+
+    async fetchDOIMetadataAsBibTeX(doi: string): Promise<string> {
+        const url = `https://doi.org/${encodeURIComponent(doi)}`;
+        const response = await fetch(url, {
+            headers: { "Accept": "application/x-bibtex" },
+        });
+        if (!response.ok) {
+            throw new Error(`Error: ${response.statusText}`);
+        }
+        let bibtex = await response.text();
+        // Format BibTeX: Add line breaks after each field
+        bibtex = bibtex.replace(/,(?=\s*\w+\s*=)/g, ',\n  ');
+        return bibtex;
     }
 
     cleanMetadata(metadata: any) {
@@ -90,7 +105,7 @@ export default class DOIReferencePlugin extends Plugin {
 	}`;
 	}
 
-    generateNoteContent(metadata: any) {
+    generateNoteContent(metadata: any, bibtex: string) {
         return `---
 type: ${metadata.type}
 cite_key: ${metadata.cite_key}
@@ -102,7 +117,7 @@ publisher: ${metadata.publisher}
 journal: ${metadata.journal}
 url: ${metadata.url}
 bibtex: |-
-  ${metadata.bibtex.split("\n").join("\n  ")}
+  ${bibtex}
 tags:
   - bibliography
 ---
