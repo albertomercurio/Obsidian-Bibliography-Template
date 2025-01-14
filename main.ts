@@ -112,6 +112,16 @@ bibtex: |-
 tags:
   - bibliography
 ---
+
+## Attachments
+
+- PDF:
+- Supplemental:
+
+## Tasks
+- [ ] Add PDF 🔽
+
+## Comments
 `;
     }
 
