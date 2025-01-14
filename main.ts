@@ -20,7 +20,7 @@ export default class DOIReferencePlugin extends Plugin {
 
         try {
             const metadata = await this.fetchDOIMetadata(doi);
-            const bibtex = await this.fetchDOIMetadataAsBibTeX(doi);
+            const bibtex = await this.fetchDOIMetadataAsBibTeX(doi, metadata);
             
 			// Format the note title: Title - FirstAuthorSurname - Year
 			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
@@ -54,7 +54,7 @@ export default class DOIReferencePlugin extends Plugin {
         return await response.json();
     }
 
-    async fetchDOIMetadataAsBibTeX(doi: string): Promise<string> {
+    async fetchDOIMetadataAsBibTeX(doi: string, metadata: any): Promise<string> {
         const url = `https://doi.org/${encodeURIComponent(doi)}`;
         const response = await fetch(url, {
             headers: { "Accept": "application/x-bibtex" },
@@ -65,6 +65,12 @@ export default class DOIReferencePlugin extends Plugin {
         let bibtex = await response.text();
         // Format BibTeX: Add line breaks after each field
         bibtex = bibtex.replace(/,(?=\s*\w+\s*=)/g, ',\n  ');
+        // Generate the new citekey
+        const newCiteKey = this.getCiteKey(metadata);
+
+        // Replace the old citekey with the new one
+        bibtex = bibtex.replace(/@[^{]+{[^,]+,/, (match) => match.replace(/[^,{]+/, newCiteKey));
+
         return bibtex;
     }
 
