@@ -21,14 +21,13 @@ export default class DOIReferencePlugin extends Plugin {
         try {
             const metadata = await this.fetchDOIMetadata(doi);
             const bibtex = await this.fetchDOIMetadataAsBibTeX(doi);
-            const cleanedMetadata = this.cleanMetadata(metadata);
             
 			// Format the note title: Title - FirstAuthorSurname - Year
-			const safeTitle = cleanedMetadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
-			const firstAuthorSurname = cleanedMetadata.authors[0]?.surname || "Unknown Author";
-			const year = cleanedMetadata.year || "Unknown Year";
+			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
+			const firstAuthorSurname = metadata.author[0]?.family || "Unknown Author";
+			const year = this.getYear(metadata);
 			const noteTitle = `${safeTitle} - ${firstAuthorSurname} - ${year}`;
-			const noteContent = this.generateNoteContent(cleanedMetadata, bibtex);
+			const noteContent = this.generateNoteContent(metadata, bibtex);
             this.createNewNote(noteTitle, noteContent);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
@@ -69,53 +68,30 @@ export default class DOIReferencePlugin extends Plugin {
         return bibtex;
     }
 
-    cleanMetadata(metadata: any) {
-		const authors = metadata.author
-			? metadata.author.map((author: { given: string; family: string }) => ({
-				  name: author.given || "Unknown",
-				  surname: author.family || "Unknown",
-			  }))
-			: [];
-	
-		return {
-			type: metadata.type || "article",
-			cite_key: `${metadata.author?.[0]?.family || "Unknown"}${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}${metadata.title?.split(" ")[0] || "Unknown"}`,
-			title: metadata.title || "Unknown Title",
-			authors,
-			year: metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown",
-			publisher: metadata.publisher || "Unknown Publisher",
-			journal: metadata["container-title"] || "Unknown Journal",
-			url: metadata.URL || "Unknown URL",
-			bibtex: this.generateBibTeX(metadata, authors),
-		};
-	}
+    getCiteKey(metadata: any) {
+        // Remove accents and spaces from author's surname
+        const author = metadata.author[0]?.family.replace(/\s+/g, '').normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "UnknownAuthor";
+        const year = this.getYear(metadata);
+        const title_first_word = metadata.title.split(" ")[0] || "UnknownTitle";
+        return `${author}${year}${title_first_word}`;
+    }
 
-    generateBibTeX(metadata: any, authors: { name: string; surname: string }[]) {
-		const formattedAuthors = authors
-			.map((author) => `${author.surname}, ${author.name}`)
-			.join(" and ");
-	
-		return `@${metadata.type || "article"}{${metadata.author?.[0]?.family || "Unknown"}${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}${metadata.title?.split(" ")[0] || "Unknown"},
-	  title = {${metadata.title || "Unknown Title"}},
-	  journal = {${metadata["container-title"] || "Unknown Journal"}},
-	  year = {${metadata.issued?.["date-parts"]?.[0]?.[0] || "Unknown"}},
-	  publisher = {${metadata.publisher || "Unknown Publisher"}},
-	  url = {${metadata.URL || "Unknown URL"}},
-	  author = {${formattedAuthors}}
-	}`;
-	}
+    getYear(metadata: any) {
+        return metadata.issued["date-parts"][0][0] || "UnknownYear";
+    }
 
     generateNoteContent(metadata: any, bibtex: string) {
         return `---
 type: ${metadata.type}
-cite_key: ${metadata.cite_key}
+cite_key: ${this.getCiteKey(metadata)}
 title: ${metadata.title}
 authors:
-${metadata.authors.map((author: { name: string; surname: string }) => `  - ${author.surname} ${author.name}`).join("\n")}
-year: ${metadata.year}
+${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
+year: ${this.getYear(metadata)}
 publisher: ${metadata.publisher}
-journal: ${metadata.journal}
-url: ${metadata.url}
+journal: ${metadata["container-title"]}
+doi: ${metadata.DOI}
+url: ${metadata.URL}
 bibtex: |-
   ${bibtex}
 tags:
