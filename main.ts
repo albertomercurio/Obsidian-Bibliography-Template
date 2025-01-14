@@ -88,8 +88,16 @@ export default class DOIReferencePlugin extends Plugin {
     }
 
     generateNoteContent(metadata: any, bibtex: string) {
+        // Define a mapping from the type field to BibTeX entry types
+        const typeMapping: { [key: string]: string } = {
+            "journal-article": "article",
+            "book": "book",
+            "book-chapter": "inbook",
+            // Add more mappings as needed
+        };
+
         return `---
-type: ${metadata.type}
+type: ${typeMapping[metadata.type]}
 cite_key: ${this.getCiteKey(metadata)}
 title: ${metadata.title}
 authors:
