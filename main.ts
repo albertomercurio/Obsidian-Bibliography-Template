@@ -69,7 +69,8 @@ export default class DOIReferencePlugin extends Plugin {
         const newCiteKey = this.getCiteKey(metadata);
 
         // Replace the old citekey with the new one
-        bibtex = bibtex.replace(/@[^{]+{[^,]+,/, (match) => match.replace(/[^,{]+/, newCiteKey));
+        // Replace the old citekey with the new one
+        bibtex = bibtex.replace(/(@[^{]+{)[^,]+,/, `$1${newCiteKey},`);
 
         return bibtex;
     }
