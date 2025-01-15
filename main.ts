@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 
 export default class DOIReferencePlugin extends Plugin {
     async onload() {
@@ -28,7 +28,7 @@ export default class DOIReferencePlugin extends Plugin {
 			const year = this.getYear(metadata);
 			const noteTitle = `${safeTitle} - ${firstAuthorSurname} - ${year}`;
 			const noteContent = this.generateNoteContent(metadata, bibtex);
-            this.createNewNote(noteTitle, noteContent);
+            this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
         }
@@ -87,7 +87,7 @@ export default class DOIReferencePlugin extends Plugin {
         return metadata.issued["date-parts"][0][0] || "UnknownYear";
     }
 
-    generateNoteContent(metadata: any, bibtex: string) {
+    getType(metadata: any) {
         // Define a mapping from the type field to BibTeX entry types
         const typeMapping: { [key: string]: string } = {
             "journal-article": "article",
@@ -96,8 +96,14 @@ export default class DOIReferencePlugin extends Plugin {
             // Add more mappings as needed
         };
 
+        const type = typeMapping[metadata.type] || "article";
+
+        return type;
+    }
+
+    generateNoteContent(metadata: any, bibtex: string) {
         return `---
-type: ${typeMapping[metadata.type]}
+type: ${this.getType(metadata)}
 cite_key: ${this.getCiteKey(metadata)}
 title: ${metadata.title}
 authors:
@@ -125,10 +131,17 @@ tags:
 `;
     }
 
-    async createNewNote(noteTitle: string, content: string) {
-        const filePath = `${noteTitle}.md`;
+    async createNewNote(noteTitle: string, content: string, metadata: any) {
+        const type = this.getType(metadata);
+        const folderPath = type === "article" ? "Research/Bibliography/Articles" : "Research/Bibliography/Books";
+        const filePath = `${folderPath}/${noteTitle}.md`;
         await this.app.vault.create(filePath, content);
-        new Notice(`Note created: ${filePath}`);
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) {
+            await this.app.workspace.getLeaf(true).openFile(file);
+        } else {
+            new Notice("Failed to open the newly created note.");
+        }
     }
 }
 
