@@ -1,5 +1,4 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-// import { fetch } from 'yaml';
 
 export default class DOIReferencePlugin extends Plugin {
     async onload() {
