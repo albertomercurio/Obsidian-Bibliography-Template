@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-bibliography-manager",
-	"version": "1.0.1",
+	"version": "0.1.0",
 	"description": "This is a bibliography manager for Obsidian.",
 	"main": "main.js",
 	"scripts": {

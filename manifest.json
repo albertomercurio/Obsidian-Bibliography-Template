@@ -1,7 +1,7 @@
 {
 	"id": "bibliography-manager",
 	"name": "Bibliography Manager",
-	"version": "1.0.1",
+	"version": "0.1.0",
 	"minAppVersion": "0.15.0",
 	"description": "This is a fully Obsidian-based bibliography manager.",
 	"author": "Alberto Mercurio and Lorenzo Fioroni",
