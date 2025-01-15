@@ -1,4 +1,5 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+// import { fetch } from 'yaml';
 
 export default class DOIReferencePlugin extends Plugin {
     async onload() {
@@ -74,7 +75,10 @@ export default class DOIReferencePlugin extends Plugin {
         // Generate the new citekey
         const newCiteKey = this.getCiteKey(metadata);
 
-        // Replace the old citekey with the new one
+        if (await this.isCiteKeyDuplicate(newCiteKey)) {
+            throw new Error(`Cite key "${newCiteKey}" is already in use.`);
+        }
+
         // Replace the old citekey with the new one
         bibtex = bibtex.replace(/(@[^{]+{)[^,]+,/, `$1${newCiteKey},`);
 
@@ -89,6 +93,18 @@ export default class DOIReferencePlugin extends Plugin {
             // .replace(/^[^a-zA-Z]+/, "")             // Ensure the key starts with a letter
             .replace(/_+/g, "_")                    // Collapse multiple underscores
             .replace(/_$/, "");                     // Remove trailing underscore
+    }
+
+    async isCiteKeyDuplicate(citeKey: string): Promise<boolean> {
+        const files = this.app.vault.getMarkdownFiles();
+        for (const file of files) {
+            const content = await this.app.vault.read(file);
+            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+            if (frontmatter && frontmatter['cite_key'] === citeKey) {
+                return true;
+            }
+        }
+        return false;
     }
 
     getCiteKey(metadata: any) {
