@@ -7,7 +7,7 @@ var p=Object.defineProperty;var u=Object.getOwnPropertyDescriptor;var g=Object.g
   `);let a=this.getCiteKey(n);return o=o.replace(/(@[^{]+{)[^,]+,/,`$1${a},`),o}getCiteKey(t){var o;let n=((o=t.author[0])==null?void 0:o.family.replace(/\s+/g,"").normalize("NFD").replace(/[\u0300-\u036f]/g,""))||"UnknownAuthor",e=this.getYear(t),i=t.title.split(" ")[0]||"UnknownTitle";return`${n}${e}${i}`}getYear(t){return t.issued["date-parts"][0][0]||"UnknownYear"}getType(t){return{"journal-article":"article",book:"book","book-chapter":"inbook"}[t.type]||"article"}generateNoteContent(t,n){return`---
 type: ${this.getType(t)}
 cite_key: ${this.getCiteKey(t)}
-title: ${t.title}
+title: "${t.title}"
 authors:
 ${t.author.map(e=>`  - ${e.family} ${e.given}`).join(`
 `)}

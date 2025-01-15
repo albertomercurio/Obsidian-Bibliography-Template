@@ -105,7 +105,7 @@ export default class DOIReferencePlugin extends Plugin {
         return `---
 type: ${this.getType(metadata)}
 cite_key: ${this.getCiteKey(metadata)}
-title: ${metadata.title}
+title: "${metadata.title}"
 authors:
 ${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
 year: ${this.getYear(metadata)}
