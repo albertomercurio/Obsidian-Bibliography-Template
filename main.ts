@@ -63,9 +63,11 @@ export default class DOIReferencePlugin extends Plugin {
             throw new Error(`Error: ${response.statusText}`);
         }
         let bibtex = await response.text();
+
+        // Remove any whitespace at the beginning of the BibTeX string
+        bibtex = bibtex.replace(/^\s+/, '');
         // Remove all existing line breaks and extra spaces
         bibtex = bibtex.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
-
         // Format BibTeX: Add line breaks after each field with consistent indentation
         bibtex = bibtex.replace(/\s*,\s*(?=\w+\s*=)/g, ',\n  ');
 
