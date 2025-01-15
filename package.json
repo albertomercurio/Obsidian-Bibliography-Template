@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-bibliography-manager",
 	"version": "0.1.1",
-	"description": "This is a bibliography manager for Obsidian.",
+	"description": "This is a fully Obsidian-based bibliography manager.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
