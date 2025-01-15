@@ -26,7 +26,7 @@ export default class DOIReferencePlugin extends Plugin {
 			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
 			const firstAuthorSurname = metadata.author[0]?.family || "Unknown Author";
 			const year = this.getYear(metadata);
-			const noteTitle = `${safeTitle} - ${firstAuthorSurname} - ${year}`;
+			const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
 			const noteContent = this.generateNoteContent(metadata, bibtex);
             this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
@@ -68,7 +68,7 @@ export default class DOIReferencePlugin extends Plugin {
 
         // Format BibTeX: Add line breaks after each field with consistent indentation
         bibtex = bibtex.replace(/\s*,\s*(?=\w+\s*=)/g, ',\n  ');
-        
+
         // Generate the new citekey
         const newCiteKey = this.getCiteKey(metadata);
 
@@ -125,8 +125,8 @@ tags:
 
 ## Attachments
 
-- PDF:
-- Supplemental:
+- PDF: 
+- Supplemental: 
 
 ## Tasks
 - [ ] Add PDF 🔽
