@@ -81,11 +81,21 @@ export default class DOIReferencePlugin extends Plugin {
         return bibtex;
     }
 
+    sanitizeString(input: string): string {
+        return input
+            .normalize("NFKD")                        // Remove diacritics (accents)
+            .replace(/[\u0300-\u036f]/g, "")         // Further clean diacritics
+            .replace(/[^a-zA-Z0-9-_]/g, "_")        // Replace invalid characters with underscore
+            // .replace(/^[^a-zA-Z]+/, "")             // Ensure the key starts with a letter
+            .replace(/_+/g, "_")                    // Collapse multiple underscores
+            .replace(/_$/, "");                     // Remove trailing underscore
+    }
+
     getCiteKey(metadata: any) {
         // Remove accents and spaces from author's surname
-        const author = metadata.author[0]?.family.replace(/\s+/g, '').normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "UnknownAuthor";
+        const author = this.sanitizeString(metadata.author[0]?.family.replace(/\s+/g, '')) || "UnknownAuthor";
         const year = this.getYear(metadata);
-        const title_first_word = metadata.title.split(" ")[0] || "UnknownTitle";
+        const title_first_word = this.sanitizeString(metadata.title.split(" ")[0]) || "UnknownTitle";
         return `${author}${year}${title_first_word}`;
     }
 
@@ -121,6 +131,7 @@ doi: ${metadata.DOI}
 url: ${metadata.URL}
 bibtex: |-
   ${bibtex}
+has_attachments: false
 tags:
   - bibliography
 ---
@@ -129,9 +140,6 @@ tags:
 
 - PDF: 
 - Supplemental: 
-
-## Tasks
-- [ ] Add PDF 🔽
 
 ## Comments
 `;
