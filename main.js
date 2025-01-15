@@ -12,8 +12,8 @@ authors:
 ${t.author.map(e=>`  - ${e.family} ${e.given}`).join(`
 `)}
 year: ${this.getYear(t)}
-publisher: ${t.publisher}
-journal: ${t["container-title"]}
+publisher: "${t.publisher}"
+journal: "${t["container-title"]}"
 doi: ${t.DOI}
 url: ${t.URL}
 bibtex: |-

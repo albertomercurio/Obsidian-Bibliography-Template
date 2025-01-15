@@ -115,8 +115,8 @@ title: "${metadata.title}"
 authors:
 ${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
 year: ${this.getYear(metadata)}
-publisher: ${metadata.publisher}
-journal: ${metadata["container-title"]}
+publisher: "${metadata.publisher}"
+journal: "${metadata["container-title"]}"
 doi: ${metadata.DOI}
 url: ${metadata.URL}
 bibtex: |-
