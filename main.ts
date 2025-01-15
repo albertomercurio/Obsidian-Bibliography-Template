@@ -63,8 +63,12 @@ export default class DOIReferencePlugin extends Plugin {
             throw new Error(`Error: ${response.statusText}`);
         }
         let bibtex = await response.text();
-        // Format BibTeX: Add line breaks after each field
-        bibtex = bibtex.replace(/,(?=\s*\w+\s*=)/g, ',\n  ');
+        // Remove all existing line breaks and extra spaces
+        bibtex = bibtex.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+
+        // Format BibTeX: Add line breaks after each field with consistent indentation
+        bibtex = bibtex.replace(/\s*,\s*(?=\w+\s*=)/g, ',\n  ');
+        
         // Generate the new citekey
         const newCiteKey = this.getCiteKey(metadata);
 
