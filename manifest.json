@@ -1,6 +1,6 @@
 {
-	"id": "bibliography-manager",
-	"name": "Bibliography Manager",
+	"id": "obsidian-bibliography-manager",
+	"name": "Obsidian Bibliography Manager",
 	"version": "0.1.1",
 	"minAppVersion": "0.15.0",
 	"description": "This is a fully Obsidian-based bibliography manager.",
