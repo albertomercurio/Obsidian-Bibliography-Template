@@ -8,14 +8,25 @@ interface ReferenceEntry {
 
 const DATABASE_FILENAME = "bibliography_database.json";
 
-export default class DOIReferencePlugin extends Plugin {
+export default class ObsidianBibliographyManager extends Plugin {
     async onload() {
         this.addCommand({
-            id: "fetch-doi-metadata",
-            name: "Fetch DOI Metadata",
+            id: "add-reference-from-doi",
+            name: "Add Reference from DOI",
             checkCallback: (checking: boolean) => {
                 if (!checking) {
                     this.fetchAndCreateNote();
+                }
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "remove-opened-reference",
+            name: "Remove Opened Reference",
+            checkCallback: (checking: boolean) => {
+                if (!checking) {
+                    this.removeOpenedReference();
                 }
                 return true;
             },
@@ -27,24 +38,77 @@ export default class DOIReferencePlugin extends Plugin {
         if (!doi) return;
 
         try {
-            const metadata = await this.fetchDOIMetadata(doi);
-            const bibtex = await this.fetchDOIMetadataAsBibTeX(doi, metadata);
+            const metadata = await fetchDOIMetadata(doi);
+            const bibtex = await fetchDOIMetadataAsBibTeX(doi, metadata);
             
 			// Format the note title: Title - FirstAuthorSurname - Year
 			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
 			const firstAuthorSurname = metadata.author[0]?.family || "Unknown Author";
-			const year = this.getYear(metadata);
+			const year = getYear(metadata);
 			const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
-            const citekey = this.getCiteKey(metadata);
-			const noteContent = this.generateNoteContent(metadata, bibtex, citekey);
+            const citekey = getCiteKey(metadata);
+			const noteContent = generateNoteContent(metadata, bibtex, citekey);
 
             // Add the reference in the database
-            await addReference(this.app.vault, { citekey, metadata, bibtex });
+            const plugin_dir = this.manifest.dir;
+            await addReference(this.app.vault, plugin_dir, { citekey, metadata, bibtex });
 
             this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
         }
+    }
+
+    async removeOpenedReference() {
+        const doi = await this.extractDOIFromActiveFile();
+        if (!doi) return;
+        
+        try {
+            await removeReferenceByDOI(this.app.vault, doi);
+            new Notice("Reference removed successfully.");
+        } catch (error) {
+            new Notice("Failed to remove reference: " + error.message);
+        }
+
+        await this.deleteActiveFile();
+    }
+
+    // Function to delete the currently active file
+    async deleteActiveFile() {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            new Notice("No active file found.");
+            return;
+        }
+
+        try {
+            await this.app.vault.delete(activeFile);
+            new Notice("File deleted successfully.");
+        } catch (error) {
+            new Notice("Failed to delete file: " + error.message);
+        }
+    }
+
+    async extractDOIFromActiveFile() {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            new Notice("No active file found.");
+            return;
+        }
+    
+        const fileCache = this.app.metadataCache.getFileCache(activeFile);
+        if (!fileCache || !fileCache.frontmatter) {
+            new Notice("No front matter found in the active file.");
+            return;
+        }
+    
+        const doi = fileCache.frontmatter.doi;
+        if (!doi) {
+            new Notice("No DOI found in the front matter of the active file.");
+            return;
+        }
+    
+        return doi;
     }
 
     async promptForDOI(): Promise<string | null> {
@@ -56,109 +120,8 @@ export default class DOIReferencePlugin extends Plugin {
         });
     }
 
-    async fetchDOIMetadata(doi: string) {
-        const url = `https://doi.org/${encodeURIComponent(doi)}`;
-        const response = await fetch(url, {
-            headers: { "Accept": "application/vnd.citationstyles.csl+json" },
-        });
-        if (!response.ok) {
-            throw new Error(`Error: ${response.statusText}`);
-        }
-        return await response.json();
-    }
-
-    async fetchDOIMetadataAsBibTeX(doi: string, metadata: any): Promise<string> {
-        const url = `https://doi.org/${encodeURIComponent(doi)}`;
-        const response = await fetch(url, {
-            headers: { "Accept": "application/x-bibtex" },
-        });
-        if (!response.ok) {
-            throw new Error(`Error: ${response.statusText}`);
-        }
-        let bibtex = await response.text();
-
-        // Remove any whitespace at the beginning of the BibTeX string
-        bibtex = bibtex.replace(/^\s+/, '');
-        // Remove all existing line breaks and extra spaces
-        bibtex = bibtex.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
-        // Format BibTeX: Add line breaks after each field with consistent indentation
-        bibtex = bibtex.replace(/\s*,\s*(?=\w+\s*=)/g, ',\n  ');
-
-        // Generate the new citekey
-        const newCiteKey = this.getCiteKey(metadata);
-
-        // Replace the old citekey with the new one
-        bibtex = bibtex.replace(/(@[^{]+{)[^,]+,/, `$1${newCiteKey},`);
-
-        return bibtex;
-    }
-
-    sanitizeString(input: string): string {
-        return input
-            .normalize("NFKD")                        // Remove diacritics (accents)
-            .replace(/[\u0300-\u036f]/g, "")         // Further clean diacritics
-            .replace(/[^a-zA-Z0-9-_]/g, "_")        // Replace invalid characters with underscore
-            // .replace(/^[^a-zA-Z]+/, "")             // Ensure the key starts with a letter
-            .replace(/_+/g, "_")                    // Collapse multiple underscores
-            .replace(/_$/, "");                     // Remove trailing underscore
-    }
-
-    getCiteKey(metadata: any) {
-        // Remove accents and spaces from author's surname
-        const author = this.sanitizeString(metadata.author[0]?.family.replace(/\s+/g, '')) || "UnknownAuthor";
-        const year = this.getYear(metadata);
-        const title_first_word = this.sanitizeString(metadata.title.split(" ")[0]) || "UnknownTitle";
-        return `${author}${year}${title_first_word}`;
-    }
-
-    getYear(metadata: any) {
-        return metadata.issued["date-parts"][0][0] || "UnknownYear";
-    }
-
-    getType(metadata: any) {
-        // Define a mapping from the type field to BibTeX entry types
-        const typeMapping: { [key: string]: string } = {
-            "journal-article": "article",
-            "book": "book",
-            "book-chapter": "inbook",
-            // Add more mappings as needed
-        };
-
-        const type = typeMapping[metadata.type] || "article";
-
-        return type;
-    }
-
-    generateNoteContent(metadata: any, bibtex: string, citekey: string) {
-        return `---
-type: ${this.getType(metadata)}
-cite_key: ${citekey}
-title: "${metadata.title}"
-authors:
-${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
-year: ${this.getYear(metadata)}
-publisher: "${metadata.publisher}"
-journal: "${metadata["container-title"]}"
-doi: ${metadata.DOI}
-url: ${metadata.URL}
-bibtex: |-
-  ${bibtex}
-has_attachments: false
-tags:
-  - bibliography
----
-
-## Attachments
-
-- PDF: 
-- Supplemental: 
-
-## Comments
-`;
-    }
-
     async createNewNote(noteTitle: string, content: string, metadata: any) {
-        const type = this.getType(metadata);
+        const type = getType(metadata);
         const folderPath = type === "article" ? "Research/Bibliography/Articles" : "Research/Bibliography/Books";
         const filePath = `${folderPath}/${noteTitle}.md`;
         await this.app.vault.create(filePath, content);
@@ -228,6 +191,109 @@ class InputDOIModal extends Modal {
     }
 }
 
+
+async function fetchDOIMetadata(doi: string) {
+    const url = `https://doi.org/${encodeURIComponent(doi)}`;
+    const response = await fetch(url, {
+        headers: { "Accept": "application/vnd.citationstyles.csl+json" },
+    });
+    if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+async function fetchDOIMetadataAsBibTeX(doi: string, metadata: any): Promise<string> {
+    const url = `https://doi.org/${encodeURIComponent(doi)}`;
+    const response = await fetch(url, {
+        headers: { "Accept": "application/x-bibtex" },
+    });
+    if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+    }
+    let bibtex = await response.text();
+
+    // Remove any whitespace at the beginning of the BibTeX string
+    bibtex = bibtex.replace(/^\s+/, '');
+    // Remove all existing line breaks and extra spaces
+    bibtex = bibtex.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+    // Format BibTeX: Add line breaks after each field with consistent indentation
+    bibtex = bibtex.replace(/\s*,\s*(?=\w+\s*=)/g, ',\n  ');
+
+    // Generate the new citekey
+    const newCiteKey = getCiteKey(metadata);
+
+    // Replace the old citekey with the new one
+    bibtex = bibtex.replace(/(@[^{]+{)[^,]+,/, `$1${newCiteKey},`);
+
+    return bibtex;
+}
+
+function sanitizeString(input: string): string {
+    return input
+        .normalize("NFKD")                        // Remove diacritics (accents)
+        .replace(/[\u0300-\u036f]/g, "")         // Further clean diacritics
+        .replace(/[^a-zA-Z0-9-_]/g, "_")        // Replace invalid characters with underscore
+        // .replace(/^[^a-zA-Z]+/, "")             // Ensure the key starts with a letter
+        .replace(/_+/g, "_")                    // Collapse multiple underscores
+        .replace(/-+/g, "_")                   // Replace hyphens with underscores
+        .replace(/_$/, "");                     // Remove trailing underscore
+}
+
+function getCiteKey(metadata: any) {
+    // Remove accents and spaces from author's surname
+    const author = sanitizeString(metadata.author[0]?.family.replace(/\s+/g, '')) || "UnknownAuthor";
+    const year = getYear(metadata);
+    const title_first_word = sanitizeString(metadata.title.split(" ")[0]) || "UnknownTitle";
+    return `${author}${year}${title_first_word}`;
+}
+
+function getYear(metadata: any) {
+    return metadata.issued["date-parts"][0][0] || "UnknownYear";
+}
+
+function getType(metadata: any) {
+    // Define a mapping from the type field to BibTeX entry types
+    const typeMapping: { [key: string]: string } = {
+        "journal-article": "article",
+        "book": "book",
+        "book-chapter": "inbook",
+        // Add more mappings as needed
+    };
+
+    const type = typeMapping[metadata.type] || "article";
+
+    return type;
+}
+
+function generateNoteContent(metadata: any, bibtex: string, citekey: string) {
+    return `---
+type: ${getType(metadata)}
+cite_key: ${citekey}
+title: "${metadata.title}"
+authors:
+${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
+year: ${getYear(metadata)}
+publisher: "${metadata.publisher}"
+journal: "${metadata["container-title"]}"
+doi: ${metadata.DOI}
+url: ${metadata.URL}
+bibtex: |-
+  ${bibtex}
+has_attachments: false
+tags:
+  - bibliography
+---
+
+## Attachments
+
+- PDF: 
+- Supplemental: 
+
+## Comments
+`;
+}
+
 // Create or ensure the database file exists
 export async function ensureDatabaseFileExists(vault: Vault): Promise<TFile> {
     const filePath = normalizePath(DATABASE_FILENAME);
@@ -260,7 +326,7 @@ export async function referenceExists(vault: Vault, doi: string): Promise<boolea
 }
 
 // Add a new reference
-export async function addReference(vault: Vault, newEntry: ReferenceEntry): Promise<void> {
+export async function addReference(vault: Vault, plugin_dir: any, newEntry: ReferenceEntry): Promise<void> {
     const data = await loadDatabase(vault);
     const exists = await referenceExists(vault, newEntry.metadata.DOI);
 
@@ -292,4 +358,4 @@ export async function removeReferenceByDOI(vault: Vault, doi: string): Promise<v
     } else {
         console.warn(`Reference with DOI ${doi} not found.`);
     }
-} 
+}
