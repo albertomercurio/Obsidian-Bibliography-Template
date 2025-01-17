@@ -113,31 +113,27 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
     // DATABASE FUNCTIONS
 
     // Create or ensure the database file exists
-    async ensureDatabaseFileExists(): Promise<TFile> {
-        const vault = this.app.vault;
-        const filePath = normalizePath(DATABASE_FILENAME);
-        const file = vault.getAbstractFileByPath(filePath);
+    async ensureDatabaseFileExists() {
+        const file = normalizePath(this.manifest.dir + "/" + DATABASE_FILENAME);
 
-        if (file instanceof TFile) {
-            return file;
-        } else {
-            return await vault.create(filePath, JSON.stringify([], null, 2));
+        if (!(await this.app.vault.adapter.exists(file))) {
+            await this.app.vault.adapter.write(file, JSON.stringify([], null, 2));
         }
+
+        return file;
     }
 
     // Load the database content
     async loadDatabase(): Promise<ReferenceEntry[]> {
-        const vault = this.app.vault;
         const file = await this.ensureDatabaseFileExists();
-        const content = await vault.read(file);
+        const content = await this.app.vault.adapter.read(file);
         return JSON.parse(content);
     }
 
     // Save the database content
     async saveDatabase(data: ReferenceEntry[]): Promise<void> {
-        const vault = this.app.vault;
         const file = await this.ensureDatabaseFileExists();
-        await vault.modify(file, JSON.stringify(data, null, 2));
+        await this.app.vault.adapter.write(file, JSON.stringify(data, null, 2));
     }
 
     // Check if a reference exists by DOI
