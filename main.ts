@@ -8,7 +8,7 @@ interface ReferenceEntry {
 
 const DATABASE_FILENAME = "bibliography_database.json";
 
-export default class ObsidianBibliographyManager extends Plugin {
+export default class ObsidianBibliographyManagerPlugin extends Plugin {
     async onload() {
         this.addCommand({
             id: "add-reference-from-doi",
@@ -50,8 +50,7 @@ export default class ObsidianBibliographyManager extends Plugin {
 			const noteContent = generateNoteContent(metadata, bibtex, citekey);
 
             // Add the reference in the database
-            const plugin_dir = this.manifest.dir;
-            await addReference(this.app.vault, plugin_dir, { citekey, metadata, bibtex });
+            await this.addReference({ citekey, metadata, bibtex });
 
             this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
@@ -64,7 +63,7 @@ export default class ObsidianBibliographyManager extends Plugin {
         if (!doi) return;
         
         try {
-            await removeReferenceByDOI(this.app.vault, doi);
+            await this.removeReferenceByDOI(doi);
             new Notice("Reference removed successfully.");
         } catch (error) {
             new Notice("Failed to remove reference: " + error.message);
@@ -109,6 +108,77 @@ export default class ObsidianBibliographyManager extends Plugin {
         }
     
         return doi;
+    }
+
+    // DATABASE FUNCTIONS
+
+    // Create or ensure the database file exists
+    async ensureDatabaseFileExists(): Promise<TFile> {
+        const vault = this.app.vault;
+        const filePath = normalizePath(DATABASE_FILENAME);
+        const file = vault.getAbstractFileByPath(filePath);
+
+        if (file instanceof TFile) {
+            return file;
+        } else {
+            return await vault.create(filePath, JSON.stringify([], null, 2));
+        }
+    }
+
+    // Load the database content
+    async loadDatabase(): Promise<ReferenceEntry[]> {
+        const vault = this.app.vault;
+        const file = await this.ensureDatabaseFileExists();
+        const content = await vault.read(file);
+        return JSON.parse(content);
+    }
+
+    // Save the database content
+    async saveDatabase(data: ReferenceEntry[]): Promise<void> {
+        const vault = this.app.vault;
+        const file = await this.ensureDatabaseFileExists();
+        await vault.modify(file, JSON.stringify(data, null, 2));
+    }
+
+    // Check if a reference exists by DOI
+    async referenceExists(doi: string): Promise<boolean> {
+        const data = await this.loadDatabase();
+        return data.some(entry => entry.metadata.DOI === doi.toLowerCase());
+    }
+
+    // Add a new reference
+    async addReference(newEntry: ReferenceEntry): Promise<void> {
+        const data = await this.loadDatabase();
+        const exists = await this.referenceExists(newEntry.metadata.DOI);
+
+        if (!exists) {
+            // Normalize the DOI to lowercase
+            newEntry.metadata.DOI = newEntry.metadata.DOI.toLowerCase();
+            data.push(newEntry);
+            await this.saveDatabase(data);
+        } else {
+            throw new Error(`Reference with DOI ${newEntry.metadata.DOI} already exists.`);
+        }
+    }
+
+    // Find a reference by DOI
+    async getReferenceByDOI(doi: string): Promise<ReferenceEntry | undefined> {
+        const data = await this.loadDatabase();
+        return data.find(entry => entry.metadata.DOI === doi.toLowerCase());
+    }
+
+    // Remove a reference by DOI
+    async removeReferenceByDOI(doi: string): Promise<void> {
+        let data = await this.loadDatabase();
+        const initialLength = data.length;
+        data = data.filter(entry => entry.metadata.DOI !== doi.toLowerCase());
+
+        if (data.length !== initialLength) {
+            await this.saveDatabase(data);
+            console.log(`Reference with DOI ${doi} removed.`);
+        } else {
+            console.warn(`Reference with DOI ${doi} not found.`);
+        }
     }
 
     async promptForDOI(): Promise<string | null> {
@@ -292,70 +362,4 @@ tags:
 
 ## Comments
 `;
-}
-
-// Create or ensure the database file exists
-export async function ensureDatabaseFileExists(vault: Vault): Promise<TFile> {
-    const filePath = normalizePath(DATABASE_FILENAME);
-    const file = vault.getAbstractFileByPath(filePath);
-
-    if (file instanceof TFile) {
-        return file;
-    } else {
-        return await vault.create(filePath, JSON.stringify([], null, 2));
-    }
-}
-
-// Load the database content
-export async function loadDatabase(vault: Vault): Promise<ReferenceEntry[]> {
-    const file = await ensureDatabaseFileExists(vault);
-    const content = await vault.read(file);
-    return JSON.parse(content);
-}
-
-// Save the database content
-export async function saveDatabase(vault: Vault, data: ReferenceEntry[]): Promise<void> {
-    const file = await ensureDatabaseFileExists(vault);
-    await vault.modify(file, JSON.stringify(data, null, 2));
-}
-
-// Check if a reference exists by DOI
-export async function referenceExists(vault: Vault, doi: string): Promise<boolean> {
-    const data = await loadDatabase(vault);
-    return data.some(entry => entry.metadata.DOI === doi.toLowerCase());
-}
-
-// Add a new reference
-export async function addReference(vault: Vault, plugin_dir: any, newEntry: ReferenceEntry): Promise<void> {
-    const data = await loadDatabase(vault);
-    const exists = await referenceExists(vault, newEntry.metadata.DOI);
-
-    if (!exists) {
-        // Normalize the DOI to lowercase
-        newEntry.metadata.DOI = newEntry.metadata.DOI.toLowerCase();
-        data.push(newEntry);
-        await saveDatabase(vault, data);
-    } else {
-        throw new Error(`Reference with DOI ${newEntry.metadata.DOI} already exists.`);
-    }
-}
-
-// Find a reference by DOI
-export async function getReferenceByDOI(vault: Vault, doi: string): Promise<ReferenceEntry | undefined> {
-    const data = await loadDatabase(vault);
-    return data.find(entry => entry.metadata.DOI === doi.toLowerCase());
-}
-
-// Remove a reference by DOI
-export async function removeReferenceByDOI(vault: Vault, doi: string): Promise<void> {
-    let data = await loadDatabase(vault);
-    const initialLength = data.length;
-    data = data.filter(entry => entry.metadata.DOI !== doi.toLowerCase());
-
-    if (data.length !== initialLength) {
-        await saveDatabase(vault, data);
-        console.log(`Reference with DOI ${doi} removed.`);
-    } else {
-        console.warn(`Reference with DOI ${doi} not found.`);
-    }
 }
