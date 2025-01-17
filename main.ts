@@ -1,4 +1,12 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, Vault, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, normalizePath } from 'obsidian';
+
+interface ReferenceEntry {
+    citekey: string;
+    metadata: any;
+    bibtex: string;
+}
+
+const DATABASE_FILENAME = "bibliography_database.json";
 
 export default class DOIReferencePlugin extends Plugin {
     async onload() {
@@ -27,7 +35,12 @@ export default class DOIReferencePlugin extends Plugin {
 			const firstAuthorSurname = metadata.author[0]?.family || "Unknown Author";
 			const year = this.getYear(metadata);
 			const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
-			const noteContent = this.generateNoteContent(metadata, bibtex);
+            const citekey = this.getCiteKey(metadata);
+			const noteContent = this.generateNoteContent(metadata, bibtex, citekey);
+
+            // Add the reference in the database
+            await addReference(this.app.vault, { citekey, metadata, bibtex });
+
             this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
             new Notice("Failed to fetch DOI metadata: " + error.message);
@@ -74,10 +87,6 @@ export default class DOIReferencePlugin extends Plugin {
         // Generate the new citekey
         const newCiteKey = this.getCiteKey(metadata);
 
-        if (await this.isCiteKeyDuplicate(newCiteKey)) {
-            throw new Error(`Cite key "${newCiteKey}" is already in use.`);
-        }
-
         // Replace the old citekey with the new one
         bibtex = bibtex.replace(/(@[^{]+{)[^,]+,/, `$1${newCiteKey},`);
 
@@ -92,18 +101,6 @@ export default class DOIReferencePlugin extends Plugin {
             // .replace(/^[^a-zA-Z]+/, "")             // Ensure the key starts with a letter
             .replace(/_+/g, "_")                    // Collapse multiple underscores
             .replace(/_$/, "");                     // Remove trailing underscore
-    }
-
-    async isCiteKeyDuplicate(citeKey: string): Promise<boolean> {
-        const files = this.app.vault.getMarkdownFiles();
-        for (const file of files) {
-            const content = await this.app.vault.read(file);
-            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-            if (frontmatter && frontmatter['cite_key'] === citeKey) {
-                return true;
-            }
-        }
-        return false;
     }
 
     getCiteKey(metadata: any) {
@@ -132,10 +129,10 @@ export default class DOIReferencePlugin extends Plugin {
         return type;
     }
 
-    generateNoteContent(metadata: any, bibtex: string) {
+    generateNoteContent(metadata: any, bibtex: string, citekey: string) {
         return `---
 type: ${this.getType(metadata)}
-cite_key: ${this.getCiteKey(metadata)}
+cite_key: ${citekey}
 title: "${metadata.title}"
 authors:
 ${metadata.author.map((author: { given: string; family: string }) => `  - ${author.family} ${author.given}`).join("\n")}
@@ -230,3 +227,69 @@ class InputDOIModal extends Modal {
         contentEl.empty();
     }
 }
+
+// Create or ensure the database file exists
+export async function ensureDatabaseFileExists(vault: Vault): Promise<TFile> {
+    const filePath = normalizePath(DATABASE_FILENAME);
+    const file = vault.getAbstractFileByPath(filePath);
+
+    if (file instanceof TFile) {
+        return file;
+    } else {
+        return await vault.create(filePath, JSON.stringify([], null, 2));
+    }
+}
+
+// Load the database content
+export async function loadDatabase(vault: Vault): Promise<ReferenceEntry[]> {
+    const file = await ensureDatabaseFileExists(vault);
+    const content = await vault.read(file);
+    return JSON.parse(content);
+}
+
+// Save the database content
+export async function saveDatabase(vault: Vault, data: ReferenceEntry[]): Promise<void> {
+    const file = await ensureDatabaseFileExists(vault);
+    await vault.modify(file, JSON.stringify(data, null, 2));
+}
+
+// Check if a reference exists by DOI
+export async function referenceExists(vault: Vault, doi: string): Promise<boolean> {
+    const data = await loadDatabase(vault);
+    return data.some(entry => entry.metadata.DOI === doi.toLowerCase());
+}
+
+// Add a new reference
+export async function addReference(vault: Vault, newEntry: ReferenceEntry): Promise<void> {
+    const data = await loadDatabase(vault);
+    const exists = await referenceExists(vault, newEntry.metadata.DOI);
+
+    if (!exists) {
+        // Normalize the DOI to lowercase
+        newEntry.metadata.DOI = newEntry.metadata.DOI.toLowerCase();
+        data.push(newEntry);
+        await saveDatabase(vault, data);
+    } else {
+        throw new Error(`Reference with DOI ${newEntry.metadata.DOI} already exists.`);
+    }
+}
+
+// Find a reference by DOI
+export async function getReferenceByDOI(vault: Vault, doi: string): Promise<ReferenceEntry | undefined> {
+    const data = await loadDatabase(vault);
+    return data.find(entry => entry.metadata.DOI === doi.toLowerCase());
+}
+
+// Remove a reference by DOI
+export async function removeReferenceByDOI(vault: Vault, doi: string): Promise<void> {
+    let data = await loadDatabase(vault);
+    const initialLength = data.length;
+    data = data.filter(entry => entry.metadata.DOI !== doi.toLowerCase());
+
+    if (data.length !== initialLength) {
+        await saveDatabase(vault, data);
+        console.log(`Reference with DOI ${doi} removed.`);
+    } else {
+        console.warn(`Reference with DOI ${doi} not found.`);
+    }
+} 
