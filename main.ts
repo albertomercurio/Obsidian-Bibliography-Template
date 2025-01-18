@@ -188,7 +188,7 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
 
     async createNewNote(noteTitle: string, content: string, metadata: any) {
         const type = getType(metadata);
-        const folderPath = type === "article" ? "Research/Bibliography/Articles" : "Research/Bibliography/Books";
+        const folderPath = getTypeFolder(type);
         const filePath = `${folderPath}/${noteTitle}.md`;
         await this.app.vault.create(filePath, content);
         const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -324,12 +324,26 @@ function getType(metadata: any) {
         "journal-article": "article",
         "book": "book",
         "book-chapter": "inbook",
+        "monograph": "book", // Map non-standard 'monograph' to 'book'
         // Add more mappings as needed
     };
 
-    const type = typeMapping[metadata.type] || "article";
+    const type = typeMapping[metadata.type] || "misc";
 
     return type;
+}
+
+function getTypeFolder(type: string) {
+    // Define a mapping from the type field to BibTeX entry types
+    const typeMapping: { [key: string]: string } = {
+        "article": normalizePath("Research/Bibliography/Articles"),
+        "book": normalizePath("Research/Bibliography/Books"),
+        "book-chapter": normalizePath("Research/Bibliography/Books"),
+        "monograph": normalizePath("Research/Bibliography/Books"), // Map non-standard 'monograph' to 'book'
+        // Add more mappings as needed
+    };
+
+    return typeMapping[type] || normalizePath("Research/Bibliography");
 }
 
 function generateNoteContent(metadata: any, bibtex: string, citekey: string) {
