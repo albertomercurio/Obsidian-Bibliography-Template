@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 
 export class InputDOIModal extends Modal {
     private callback: (value: string) => void;
@@ -13,7 +13,7 @@ export class InputDOIModal extends Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.createEl("h3", { text: this.placeholder });
-    
+
         const container = contentEl.createEl("div", { cls: "doi-container" });
         container.style.display = "flex";
         container.style.flexDirection = "column";
@@ -22,7 +22,7 @@ export class InputDOIModal extends Modal {
         container.style.width = "100%";
         container.style.padding = "20px";
         container.style.boxSizing = "border-box";
-    
+
         const input = container.createEl("input", { type: "text" });
         input.style.width = "100%";
         input.style.marginBottom = "10px";
@@ -30,7 +30,7 @@ export class InputDOIModal extends Modal {
         input.style.border = "1px solid #ccc";
         input.style.borderRadius = "4px";
         input.focus();
-    
+
         const submitButton = container.createEl("button", { text: "Submit" });
         // submitButton.style.backgroundColor = "#007bff";
         // submitButton.style.color = "#fff";
@@ -42,13 +42,61 @@ export class InputDOIModal extends Modal {
             this.callback(input.value.trim());
             this.close();
         };
-    
+
         input.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
                 this.callback(input.value.trim());
                 this.close();
             }
         });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+export class MetadataUpdateModal extends Modal {
+    onSubmit: (field: string, value: string) => void;
+
+    constructor(app: App, onSubmit: (field: string, value: string) => void) {
+        super(app);
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+
+        contentEl.createEl('h2', { text: 'Update Reference Metadata' });
+
+        let field = '';
+        let value = '';
+
+        new Setting(contentEl)
+            .setName('Field')
+            .setDesc('Name of the field to update')
+            .addText(text => text.onChange((val) => field = val));
+
+        // Input for the value with a description
+        new Setting(contentEl)
+        .setName('Value')
+        .setDesc('New value for the field. Enter a valid JSON string (e.g., [{"given": "Peter", "family": "Lambropoulos"}])')
+        .addTextArea(textArea => {
+            textArea
+                .setPlaceholder('Enter the value here...')
+                .onChange((val) => value = val);
+            textArea.inputEl.rows = 5; // Initial visible rows
+        });
+
+        new Setting(contentEl)
+            .addButton(btn => btn
+                .setButtonText('Update')
+                .setCta()
+                .onClick(() => {
+                    this.close();
+                    this.onSubmit(field, value);
+                }));
     }
 
     onClose() {

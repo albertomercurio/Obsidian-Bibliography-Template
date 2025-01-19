@@ -1,5 +1,5 @@
-import { App, Notice, Plugin, TFile, normalizePath } from 'obsidian';
-import { InputDOIModal } from './modal';
+import { Notice, Plugin, TFile, normalizePath } from 'obsidian';
+import { InputDOIModal, MetadataUpdateModal } from './modal';
 import { BibliographyDatabase } from './database';
 
 export default class ObsidianBibliographyManagerPlugin extends Plugin {
@@ -27,6 +27,16 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
                 return true;
             },
         });
+
+        this.addCommand({
+            id: 'update-reference-metadata',
+            name: 'Update Current Reference Metadata',
+            callback: () => {
+                new MetadataUpdateModal(this.app, async (field, value) => {
+                    await this.updateMetadata(field, value);
+                }).open();
+            }
+        });
     }
 
     async fetchAndCreateNote() {
@@ -37,13 +47,13 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
             const metadata = await fetchDOIMetadata(doi);
             const bibtex = await fetchDOIMetadataAsBibTeX(doi, metadata);
 
-			// Format the note title: Title - FirstAuthorSurname - Year
-			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
-			const firstAuthorSurname = metadata.author[0].family;
-			const year = getYear(metadata);
-			const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
+            // Format the note title: Title - FirstAuthorSurname - Year
+            const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
+            const firstAuthorSurname = metadata.author[0].family;
+            const year = getYear(metadata);
+            const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
             const citekey = getCiteKey(metadata);
-			const noteContent = generateNoteContent(metadata, bibtex, citekey);
+            const noteContent = generateNoteContent(metadata, bibtex, citekey);
 
             // Add the reference in the database
             await this.bibliography.addReference({ citekey, metadata, bibtex });
@@ -57,7 +67,7 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
     async removeOpenedReference() {
         const doi = await this.extractDOIFromActiveFile();
         if (!doi) return;
-        
+
         try {
             await this.bibliography.removeReferenceByDOI(doi);
             new Notice("Reference removed successfully.");
@@ -90,25 +100,50 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
             new Notice("No active file found.");
             return;
         }
-    
+
         const fileCache = this.app.metadataCache.getFileCache(activeFile);
         if (!fileCache || !fileCache.frontmatter) {
             new Notice("No front matter found in the active file.");
             return;
         }
-    
+
         const doi = fileCache.frontmatter.doi;
         if (!doi) {
             new Notice("No DOI found in the front matter of the active file.");
             return;
         }
-    
+
         return doi;
     }
 
-    // DATABASE FUNCTIONS
+    async updateMetadata(field: string, value: string) {
+        // const data = await this.bibliography.loadDatabase();
+        // const reference = data.find(entry => entry.filePath === file.path);
+        const doi = await this.extractDOIFromActiveFile();
+        const data = await this.bibliography.loadDatabase();
+        const reference = data.find(entry => entry.metadata.DOI === doi);
 
-    
+        if (reference) {
+            if (field === "author") {
+                try {
+                    // Attempt to parse the value as JSON
+                    const parsedValue = JSON.parse(value);
+                    reference.metadata[field] = parsedValue;
+                } catch (error) {
+                    new Notice(`Failed to parse value as JSON. Storing it as a string. Error: ${error.message}`);
+                    reference.metadata[field] = value;
+                }
+            } else {
+                reference.metadata[field] = value;
+            }
+
+            await this.bibliography.saveDatabase(data);
+            //   await this.updateNoteFrontmatter(file, field, value);
+            new Notice(`Metadata field "${field}" updated successfully.`);
+        } else {
+            new Notice(`Reference with DOI ${doi} not found in the database.`);
+        }
+    }
 
     async promptForDOI(): Promise<string | null> {
         return new Promise((resolve) => {
