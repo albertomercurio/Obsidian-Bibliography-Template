@@ -238,8 +238,9 @@ function getType(metadata: any) {
     const typeMapping: { [key: string]: string } = {
         "journal-article": "article",
         "book": "book",
-        "book-chapter": "inbook",
+        "edited-book": "book",
         "monograph": "book", // Map non-standard 'monograph' to 'book'
+        "book-chapter": "inbook",
         // Add more mappings as needed
     };
 
