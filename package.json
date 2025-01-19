@@ -2,7 +2,7 @@
 	"name": "obsidian-bibliography-manager",
 	"version": "0.1.1",
 	"description": "This is a fully Obsidian-based bibliography manager.",
-	"main": "main.js",
+	"main": "src/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",

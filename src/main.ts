@@ -1,14 +1,10 @@
-import { App, Vault, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, normalizePath } from 'obsidian';
-
-interface ReferenceEntry {
-    citekey: string;
-    metadata: any;
-    bibtex: string;
-}
-
-const DATABASE_FILENAME = "bibliography_database.json";
+import { App, Notice, Plugin, TFile, normalizePath } from 'obsidian';
+import { InputDOIModal } from './modal';
+import { BibliographyDatabase } from './database';
 
 export default class ObsidianBibliographyManagerPlugin extends Plugin {
+    bibliography: BibliographyDatabase = new BibliographyDatabase(this);
+
     async onload() {
         this.addCommand({
             id: "add-reference-from-doi",
@@ -40,17 +36,17 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
         try {
             const metadata = await fetchDOIMetadata(doi);
             const bibtex = await fetchDOIMetadataAsBibTeX(doi, metadata);
-            
+
 			// Format the note title: Title - FirstAuthorSurname - Year
 			const safeTitle = metadata.title.replace(/[\/\\:*?"<>|]/g, ""); // Remove invalid characters
-			const firstAuthorSurname = metadata.author[0]?.family || "Unknown Author";
+			const firstAuthorSurname = metadata.author[0].family;
 			const year = getYear(metadata);
 			const noteTitle = `${safeTitle} - (${year}) - ${firstAuthorSurname}`;
             const citekey = getCiteKey(metadata);
 			const noteContent = generateNoteContent(metadata, bibtex, citekey);
 
             // Add the reference in the database
-            await this.addReference({ citekey, metadata, bibtex });
+            await this.bibliography.addReference({ citekey, metadata, bibtex });
 
             this.createNewNote(noteTitle, noteContent, metadata);
         } catch (error) {
@@ -63,7 +59,7 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
         if (!doi) return;
         
         try {
-            await this.removeReferenceByDOI(doi);
+            await this.bibliography.removeReferenceByDOI(doi);
             new Notice("Reference removed successfully.");
         } catch (error) {
             new Notice("Failed to remove reference: " + error.message);
@@ -112,70 +108,7 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
 
     // DATABASE FUNCTIONS
 
-    // Create or ensure the database file exists
-    async ensureDatabaseFileExists() {
-        const file = normalizePath(this.manifest.dir + "/" + DATABASE_FILENAME);
-
-        if (!(await this.app.vault.adapter.exists(file))) {
-            await this.app.vault.adapter.write(file, JSON.stringify([], null, 2));
-        }
-
-        return file;
-    }
-
-    // Load the database content
-    async loadDatabase(): Promise<ReferenceEntry[]> {
-        const file = await this.ensureDatabaseFileExists();
-        const content = await this.app.vault.adapter.read(file);
-        return JSON.parse(content);
-    }
-
-    // Save the database content
-    async saveDatabase(data: ReferenceEntry[]): Promise<void> {
-        const file = await this.ensureDatabaseFileExists();
-        await this.app.vault.adapter.write(file, JSON.stringify(data, null, 2));
-    }
-
-    // Check if a reference exists by DOI
-    async referenceExists(doi: string): Promise<boolean> {
-        const data = await this.loadDatabase();
-        return data.some(entry => entry.metadata.DOI === doi.toLowerCase());
-    }
-
-    // Add a new reference
-    async addReference(newEntry: ReferenceEntry): Promise<void> {
-        const data = await this.loadDatabase();
-        const exists = await this.referenceExists(newEntry.metadata.DOI);
-
-        if (!exists) {
-            // Normalize the DOI to lowercase
-            newEntry.metadata.DOI = newEntry.metadata.DOI.toLowerCase();
-            data.push(newEntry);
-            await this.saveDatabase(data);
-        } else {
-            throw new Error(`Reference with DOI ${newEntry.metadata.DOI} already exists.`);
-        }
-    }
-
-    // Find a reference by DOI
-    async getReferenceByDOI(doi: string): Promise<ReferenceEntry | undefined> {
-        const data = await this.loadDatabase();
-        return data.find(entry => entry.metadata.DOI === doi.toLowerCase());
-    }
-
-    // Remove a reference by DOI
-    async removeReferenceByDOI(doi: string): Promise<void> {
-        let data = await this.loadDatabase();
-        const initialLength = data.length;
-        data = data.filter(entry => entry.metadata.DOI !== doi.toLowerCase());
-
-        if (data.length !== initialLength) {
-            await this.saveDatabase(data);
-            console.log(`Reference with DOI ${doi} removed.`);
-        } else {
-            console.warn(`Reference with DOI ${doi} not found.`);
-        }
-    }
+    
 
     async promptForDOI(): Promise<string | null> {
         return new Promise((resolve) => {
@@ -200,64 +133,6 @@ export default class ObsidianBibliographyManagerPlugin extends Plugin {
     }
 }
 
-class InputDOIModal extends Modal {
-    private callback: (value: string) => void;
-    private placeholder: string;
-
-    constructor(app: App, placeholder: string, callback: (value: string) => void) {
-        super(app);
-        this.placeholder = placeholder;
-        this.callback = callback;
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.createEl("h3", { text: this.placeholder });
-    
-        const container = contentEl.createEl("div", { cls: "doi-container" });
-        container.style.display = "flex";
-        container.style.flexDirection = "column";
-        container.style.alignItems = "center";
-        container.style.justifyContent = "center";
-        container.style.width = "100%";
-        container.style.padding = "20px";
-        container.style.boxSizing = "border-box";
-    
-        const input = container.createEl("input", { type: "text" });
-        input.style.width = "100%";
-        input.style.marginBottom = "10px";
-        input.style.padding = "10px";
-        input.style.border = "1px solid #ccc";
-        input.style.borderRadius = "4px";
-        input.focus();
-    
-        const submitButton = container.createEl("button", { text: "Submit" });
-        // submitButton.style.backgroundColor = "#007bff";
-        // submitButton.style.color = "#fff";
-        submitButton.style.border = "none";
-        submitButton.style.padding = "10px 20px";
-        submitButton.style.borderRadius = "4px";
-        submitButton.style.cursor = "pointer";
-        submitButton.onclick = () => {
-            this.callback(input.value.trim());
-            this.close();
-        };
-    
-        input.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                this.callback(input.value.trim());
-                this.close();
-            }
-        });
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
-}
-
-
 async function fetchDOIMetadata(doi: string) {
     const url = `https://doi.org/${encodeURIComponent(doi)}`;
     const response = await fetch(url, {
@@ -266,7 +141,12 @@ async function fetchDOIMetadata(doi: string) {
     if (!response.ok) {
         throw new Error(`Error: ${response.statusText}`);
     }
-    return await response.json();
+    const metadata = await response.json();
+    if (!metadata.author) {
+        new Notice("No author found in the metadata. Please add an author to the note manually.");
+        metadata.author = [{ family: "Unknown", given: "Author" }];
+    }
+    return metadata;
 }
 
 async function fetchDOIMetadataAsBibTeX(doi: string, metadata: any): Promise<string> {
@@ -308,7 +188,7 @@ function sanitizeString(input: string): string {
 
 function getCiteKey(metadata: any) {
     // Remove accents and spaces from author's surname
-    const author = sanitizeString(metadata.author[0]?.family.replace(/\s+/g, '')) || "UnknownAuthor";
+    const author = sanitizeString(metadata.author[0].family.replace(/\s+/g, ''));
     const year = getYear(metadata);
     const title_first_word = sanitizeString(metadata.title.split(" ")[0]) || "UnknownTitle";
     return `${author}${year}${title_first_word}`;
