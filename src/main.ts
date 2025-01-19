@@ -253,8 +253,7 @@ function getTypeFolder(type: string) {
     const typeMapping: { [key: string]: string } = {
         "article": normalizePath("Research/Bibliography/Articles"),
         "book": normalizePath("Research/Bibliography/Books"),
-        "book-chapter": normalizePath("Research/Bibliography/Books"),
-        "monograph": normalizePath("Research/Bibliography/Books"), // Map non-standard 'monograph' to 'book'
+        "inbook": normalizePath("Research/Bibliography/Books"),
         // Add more mappings as needed
     };
 
