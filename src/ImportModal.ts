@@ -27,7 +27,11 @@ export class ImportModal extends Modal {
           .onChange((v) => (this.value = v.trim()));
         // Submit on Enter
         text.inputEl.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") this.submit();
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            this.submit();
+          }
         });
         // Auto-focus
         setTimeout(() => text.inputEl.focus(), 50);

@@ -9,7 +9,7 @@
     "install-plugin": "cp main.js manifest.json styles.css \"/Users/alberto/Library/Mobile Documents/iCloud~md~obsidian/Documents/Research/.obsidian/plugins/research-importer/\""
   },
   "keywords": [],
-  "author": "Alberto",
+  "author": "Alberto Mercurio",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
