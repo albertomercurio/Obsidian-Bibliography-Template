@@ -1,0 +1,44 @@
+/* Research Literature Manager – modal styles */
+
+.research-importer-modal h2 {
+  margin-top: 0;
+}
+
+.research-importer-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 1em;
+}
+
+.research-importer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1em;
+  margin: 1em 0;
+}
+
+.research-importer-col {
+  background: var(--background-secondary);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+}
+
+.research-importer-col h3 {
+  margin-top: 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ri-name {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  margin: 0.25em 0;
+}
+
+.ri-detail {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin: 0;
+}

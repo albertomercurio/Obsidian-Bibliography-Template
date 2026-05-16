@@ -1,0 +1,22 @@
+{
+  "name": "research-importer",
+  "version": "1.0.0",
+  "description": "Obsidian plugin – Research Literature Manager",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "install-plugin": "cp main.js manifest.json styles.css \"/Users/alberto/Library/Mobile Documents/iCloud~md~obsidian/Documents/Research/.obsidian/plugins/research-importer/\""
+  },
+  "keywords": [],
+  "author": "Alberto",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.21.5",
+    "obsidian": "latest",
+    "tslib": "2.6.2",
+    "typescript": "5.4.5"
+  }
+}
