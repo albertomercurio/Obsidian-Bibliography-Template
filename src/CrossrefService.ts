@@ -8,9 +8,7 @@ export class CrossrefService {
       .trim();
 
     const url = `https://api.crossref.org/works/${encodeURIComponent(clean)}`;
-    const response = await fetch(url, {
-      headers: { "User-Agent": "ResearchImporter/1.0 (Obsidian plugin)" },
-    });
+    const response = await fetch(url);
 
     if (!response.ok) {
       throw new Error(

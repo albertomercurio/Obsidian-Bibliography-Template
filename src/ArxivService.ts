@@ -23,9 +23,7 @@ export class ArxivService {
 
   private async fetchSemanticScholar(id: string): Promise<PaperMetadata> {
     const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${id}?fields=title,year,authors,externalIds,publicationVenue,journal`;
-    const response = await fetch(url, {
-      headers: { "User-Agent": "ResearchImporter/1.0 (Obsidian plugin)" },
-    });
+    const response = await fetch(url);
 
     if (!response.ok) {
       throw new Error(`Semantic Scholar: ${response.status}`);
@@ -63,9 +61,7 @@ export class ArxivService {
 
   private async fetchArxivAtom(id: string): Promise<PaperMetadata> {
     const feedUrl = `https://export.arxiv.org/api/query?id_list=${id}`;
-    const feedResp = await fetch(feedUrl, {
-      headers: { "User-Agent": "ResearchImporter/1.0 (Obsidian plugin)" },
-    });
+    const feedResp = await fetch(feedUrl);
     if (!feedResp.ok) {
       throw new Error(
         `arXiv returned ${feedResp.status} for ID "${id}". Check that the arXiv ID is correct.`

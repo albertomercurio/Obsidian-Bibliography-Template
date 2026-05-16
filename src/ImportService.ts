@@ -34,6 +34,17 @@ function detectInput(raw: string): { type: "doi" | "arxiv"; id: string } {
   return { type: "doi", id: s };
 }
 
+function formatFetchError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err ?? "Unknown error");
+  const lower = message.toLowerCase();
+
+  if (lower.includes("failed to fetch") || lower.includes("load failed") || lower.includes("network")) {
+    return "Network request failed. On mobile/iPad, check internet access and try again.";
+  }
+
+  return message;
+}
+
 // ---------------------------------------------------------------------------
 // ImportService
 // ---------------------------------------------------------------------------
@@ -61,8 +72,8 @@ export class ImportService {
         type === "arxiv"
           ? await this.arxiv.fetchByArxivId(id)
           : await this.crossref.fetchByDOI(id);
-    } catch (err: any) {
-      new Notice(`❌ ${err.message}`, 7000);
+    } catch (err: unknown) {
+      new Notice(`❌ ${formatFetchError(err)}`, 7000);
       return;
     }
 

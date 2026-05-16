@@ -10,7 +10,6 @@ export class OrcidService {
   private readonly BASE = "https://pub.orcid.org/v3.0";
   private readonly HEADERS = {
     Accept: "application/json",
-    "User-Agent": "ResearchImporter/1.0 (Obsidian plugin)",
   };
 
   /**
