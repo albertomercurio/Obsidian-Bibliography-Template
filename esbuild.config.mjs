@@ -1,7 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
-import { execSync } from "child_process";
 import fs from "fs";
 
 const banner = `/*

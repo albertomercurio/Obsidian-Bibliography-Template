@@ -133,7 +133,7 @@ export class ImportService {
     }
 
     new Notice(`✅ Imported: "${file.basename}"`, 5000);
-    this.app.workspace.openLinkText(file.basename, "", false);
+    this.app.workspace.openLinkText(file.basename, "", "tab");
   }
 
   // --------------------------------------------------------------------------

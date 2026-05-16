@@ -59,8 +59,6 @@ export interface BibtexOptions {
   metadata: PaperMetadata;
   /** The wikilink display name of the journal, used for the abbreviated field */
   journalAbbrev?: string;
-  /** The vault wikilink text for each author (used for ordering only) */
-  authorNames?: { given: string; family: string }[];
 }
 
 export function generateBibtex(opts: BibtexOptions): string {

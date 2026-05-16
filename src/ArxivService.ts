@@ -62,22 +62,14 @@ export class ArxivService {
   }
 
   private async fetchArxivAtom(id: string): Promise<PaperMetadata> {
-    const url = `https://export.arxiv.org/abs/${id}`;
-    const response = await fetch(url, {
+    const feedUrl = `https://export.arxiv.org/api/query?id_list=${id}`;
+    const feedResp = await fetch(feedUrl, {
       headers: { "User-Agent": "ResearchImporter/1.0 (Obsidian plugin)" },
     });
-
-    if (!response.ok) {
-      throw new Error(
-        `arXiv returned ${response.status} for ID "${id}". Check that the arXiv ID is correct.`
-      );
-    }
-
-    // arXiv /abs/ page returns HTML; use the API feed instead
-    const feedUrl = `https://export.arxiv.org/api/query?id_list=${id}`;
-    const feedResp = await fetch(feedUrl);
     if (!feedResp.ok) {
-      throw new Error(`arXiv feed error: ${feedResp.status}`);
+      throw new Error(
+        `arXiv returned ${feedResp.status} for ID "${id}". Check that the arXiv ID is correct.`
+      );
     }
     const xml = await feedResp.text();
 

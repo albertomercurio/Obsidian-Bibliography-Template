@@ -4,8 +4,6 @@ export interface OrcidRecord {
   familyName: string;
   /** Current primary affiliation, if public */
   affiliation?: string;
-  /** Verified email domain, if public */
-  emailDomain?: string;
 }
 
 export class OrcidService {

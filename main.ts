@@ -35,7 +35,7 @@ export default class ResearchImporterPlugin extends Plugin {
       })
     );
     this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
+      this.app.vault.on("rename", (file) => {
         if (file instanceof TFile) {
           this.index.build(); // simplest correct approach on rename
         }
