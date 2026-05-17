@@ -32,13 +32,21 @@ function initialOf(given: string): string {
 // VaultIndex
 // ---------------------------------------------------------------------------
 
+// Keys under which a single file is stored across all forward indices.
+interface FileKeys {
+  orcid?: string;
+  fullName?: string;
+  initKey?: string;
+  doi?: string;
+  arxiv?: string;
+  journalKeys?: string[];
+}
+
 export class VaultIndex {
   private app: App;
 
   /** ORCID → file */
   private orcidIndex = new Map<string, TFile>();
-  /** file.path → ORCID (reverse of orcidIndex) */
-  private fileOrcidIndex = new Map<string, string>();
   /** Normalised "given family" → file */
   private fullNameIndex = new Map<string, TFile>();
   /** Normalised "initial family" (e.g. "a mercurio") → file[] */
@@ -52,30 +60,41 @@ export class VaultIndex {
   /** Normalised journal key (full name or alias) → file */
   private journalIndex = new Map<string, TFile>();
 
+  /**
+   * Reverse map: file.path → all keys under which this file is stored.
+   * Used for O(1) removal; also exposes the file's ORCID for findPerson.
+   */
+  private fileKeysIndex = new Map<string, FileKeys>();
+
   constructor(app: App) {
     this.app = app;
   }
 
   build(): void {
     this.orcidIndex.clear();
-    this.fileOrcidIndex.clear();
     this.fullNameIndex.clear();
     this.initialIndex.clear();
     this.doiIndex.clear();
     this.arxivIndex.clear();
     this.journalIndex.clear();
+    this.fileKeysIndex.clear();
 
     for (const file of this.app.vault.getMarkdownFiles()) {
       this.indexFile(file);
     }
   }
 
-  /** Call this when a file is created/modified */
+  /** Call this when a file is created/modified. Safe to call repeatedly. */
   indexFile(file: TFile): void {
+    // Remove any stale keys from a previous version of this file first,
+    // so a frontmatter edit (e.g. adding an ORCID) is always reflected correctly.
+    this.removeFile(file);
+
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache?.frontmatter) return;
     const fm = cache.frontmatter;
     const type: string = fm["type"] ?? "";
+    const keys: FileKeys = {};
 
     if (type === "Person") {
       const given: string = fm["first_name"] ?? "";
@@ -83,33 +102,39 @@ export class VaultIndex {
       const orcid: string | undefined = fm["ORCiD"] ?? undefined;
 
       if (orcid) {
-        this.orcidIndex.set(orcid.trim(), file);
-        this.fileOrcidIndex.set(file.path, orcid.trim());
+        keys.orcid = orcid.trim();
+        this.orcidIndex.set(keys.orcid, file);
       }
 
       if (given && family) {
-        const fullKey = normName(`${given} ${family}`);
-        this.fullNameIndex.set(fullKey, file);
+        keys.fullName = normName(`${given} ${family}`);
+        this.fullNameIndex.set(keys.fullName, file);
 
-        const initKey = `${initialOf(given)} ${normName(family)}`;
-        const arr = this.initialIndex.get(initKey) ?? [];
+        keys.initKey = `${initialOf(given)} ${normName(family)}`;
+        const arr = this.initialIndex.get(keys.initKey) ?? [];
         arr.push(file);
-        this.initialIndex.set(initKey, arr);
+        this.initialIndex.set(keys.initKey, arr);
       }
     }
 
     if (type === "Article" || type === "Book") {
       const doi: string | undefined = fm["doi"];
       const arxiv: string | undefined = fm["arxiv_id"];
-      if (doi) this.doiIndex.set(normDoi(doi), file);
-      if (arxiv) this.arxivIndex.set(arxiv.trim(), file);
+      if (doi) {
+        keys.doi = normDoi(doi);
+        this.doiIndex.set(keys.doi, file);
+      }
+      if (arxiv) {
+        keys.arxiv = arxiv.trim();
+        this.arxivIndex.set(keys.arxiv, file);
+      }
     }
 
     if (type === "Journal") {
       const fullName: string = fm["full_name"] ?? file.basename;
-      this.journalIndex.set(normJournal(fullName), file);
+      keys.journalKeys = [normJournal(fullName)];
+      this.journalIndex.set(keys.journalKeys[0], file);
 
-      // Index every alias
       const aliases: unknown = fm["aliases"];
       const aliasList: string[] = Array.isArray(aliases)
         ? aliases.map(String)
@@ -117,24 +142,44 @@ export class VaultIndex {
         ? [aliases]
         : [];
       for (const alias of aliasList) {
-        this.journalIndex.set(normJournal(alias), file);
+        const k = normJournal(alias);
+        keys.journalKeys.push(k);
+        this.journalIndex.set(k, file);
       }
     }
+
+    this.fileKeysIndex.set(file.path, keys);
   }
 
-  /** Remove a file from all indices (used on delete/rename) */
+  /** Remove a file from all indices. O(1) via the reverse fileKeysIndex. */
   removeFile(file: TFile): void {
-    for (const [k, v] of this.orcidIndex) if (v === file) this.orcidIndex.delete(k);
-    this.fileOrcidIndex.delete(file.path);
-    for (const [k, v] of this.fullNameIndex) if (v === file) this.fullNameIndex.delete(k);
-    for (const [k, arr] of this.initialIndex) {
-      const filtered = arr.filter((f) => f !== file);
-      if (filtered.length) this.initialIndex.set(k, filtered);
-      else this.initialIndex.delete(k);
+    const keys = this.fileKeysIndex.get(file.path);
+    if (!keys) return;
+
+    if (keys.orcid) this.orcidIndex.delete(keys.orcid);
+    if (keys.fullName) this.fullNameIndex.delete(keys.fullName);
+    if (keys.initKey) {
+      const arr = (this.initialIndex.get(keys.initKey) ?? []).filter((f) => f !== file);
+      if (arr.length) this.initialIndex.set(keys.initKey, arr);
+      else this.initialIndex.delete(keys.initKey);
     }
-    for (const [k, v] of this.doiIndex) if (v === file) this.doiIndex.delete(k);
-    for (const [k, v] of this.arxivIndex) if (v === file) this.arxivIndex.delete(k);
-    for (const [k, v] of this.journalIndex) if (v === file) this.journalIndex.delete(k);
+    if (keys.doi) this.doiIndex.delete(keys.doi);
+    if (keys.arxiv) this.arxivIndex.delete(keys.arxiv);
+    for (const k of keys.journalKeys ?? []) this.journalIndex.delete(k);
+
+    this.fileKeysIndex.delete(file.path);
+  }
+
+  /**
+   * Update the reverse index after a file rename. O(1).
+   * Forward indices (orcidIndex, fullNameIndex, etc.) hold TFile references which
+   * Obsidian mutates in place on rename, so they stay valid automatically.
+   */
+  renameFile(oldPath: string, file: TFile): void {
+    const keys = this.fileKeysIndex.get(oldPath);
+    if (!keys) return;
+    this.fileKeysIndex.delete(oldPath);
+    this.fileKeysIndex.set(file.path, keys);
   }
 
   // --------------------------------------------------------------------------
@@ -156,7 +201,7 @@ export class VaultIndex {
     const fullKey = normName(`${given} ${family}`);
     const byFull = this.fullNameIndex.get(fullKey);
     if (byFull) {
-      const candidateOrcid = this.fileOrcidIndex.get(byFull.path);
+      const candidateOrcid = this.fileKeysIndex.get(byFull.path)?.orcid;
       // Both sides have an ORCID but they differ → confirmed different people; create a new note.
       if (orcid && candidateOrcid && orcid.trim() !== candidateOrcid) {
         return { kind: "none" };

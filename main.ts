@@ -35,9 +35,9 @@ export default class ResearchImporterPlugin extends Plugin {
       })
     );
     this.registerEvent(
-      this.app.vault.on("rename", (file) => {
+      this.app.vault.on("rename", (file, oldPath) => {
         if (file instanceof TFile) {
-          this.index.build(); // simplest correct approach on rename
+          this.index.renameFile(oldPath, file);
         }
       })
     );
