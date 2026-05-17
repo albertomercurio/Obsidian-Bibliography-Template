@@ -37,6 +37,8 @@ export class VaultIndex {
 
   /** ORCID → file */
   private orcidIndex = new Map<string, TFile>();
+  /** file.path → ORCID (reverse of orcidIndex) */
+  private fileOrcidIndex = new Map<string, string>();
   /** Normalised "given family" → file */
   private fullNameIndex = new Map<string, TFile>();
   /** Normalised "initial family" (e.g. "a mercurio") → file[] */
@@ -56,6 +58,7 @@ export class VaultIndex {
 
   build(): void {
     this.orcidIndex.clear();
+    this.fileOrcidIndex.clear();
     this.fullNameIndex.clear();
     this.initialIndex.clear();
     this.doiIndex.clear();
@@ -79,7 +82,10 @@ export class VaultIndex {
       const family: string = fm["last_name"] ?? "";
       const orcid: string | undefined = fm["ORCiD"] ?? undefined;
 
-      if (orcid) this.orcidIndex.set(orcid.trim(), file);
+      if (orcid) {
+        this.orcidIndex.set(orcid.trim(), file);
+        this.fileOrcidIndex.set(file.path, orcid.trim());
+      }
 
       if (given && family) {
         const fullKey = normName(`${given} ${family}`);
@@ -119,6 +125,7 @@ export class VaultIndex {
   /** Remove a file from all indices (used on delete/rename) */
   removeFile(file: TFile): void {
     for (const [k, v] of this.orcidIndex) if (v === file) this.orcidIndex.delete(k);
+    this.fileOrcidIndex.delete(file.path);
     for (const [k, v] of this.fullNameIndex) if (v === file) this.fullNameIndex.delete(k);
     for (const [k, arr] of this.initialIndex) {
       const filtered = arr.filter((f) => f !== file);
@@ -145,10 +152,18 @@ export class VaultIndex {
       if (file) return { kind: "exact", file, reason: "ORCID match" };
     }
 
-    // 2. Full name exact match
+    // 2. Full name match — only safe to trust without dialog when ORCID confirms identity.
     const fullKey = normName(`${given} ${family}`);
     const byFull = this.fullNameIndex.get(fullKey);
-    if (byFull) return { kind: "exact", file: byFull, reason: "full name match" };
+    if (byFull) {
+      const candidateOrcid = this.fileOrcidIndex.get(byFull.path);
+      // Both sides have an ORCID but they differ → confirmed different people; create a new note.
+      if (orcid && candidateOrcid && orcid.trim() !== candidateOrcid) {
+        return { kind: "none" };
+      }
+      // Otherwise at least one ORCID is unknown; can't auto-confirm identity.
+      return { kind: "partial", file: byFull, reason: "full name match – ORCID unconfirmed" };
+    }
 
     // 3. Abbreviated given name in incoming data → check against full names in vault
     //    e.g. incoming "A. Mercurio", vault has "Alberto Mercurio"
