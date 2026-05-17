@@ -95,7 +95,11 @@ export function generateBibtex(opts: BibtexOptions): string {
 
   if (entryType === "article") {
     fields.push(["author", authorField]);
-    fields.push(["title", `{${toLatex(metadata.title)}}`]);
+    // NOTE: bibtex titles are displayed verbatim in reference managers and
+    // compiled documents — accuracy matters. titleLatex preserves math symbols
+    // as proper LaTeX (e.g. $\mathbb{Z}_{3}$); fall back to plain text only
+    // when no LaTeX version is available.
+    fields.push(["title", `{${toLatex(metadata.titleLatex ?? metadata.title)}}`]);
     fields.push(["journal", journalField]);
     fields.push(["year", year]);
     if (metadata.volume) fields.push(["volume", metadata.volume]);

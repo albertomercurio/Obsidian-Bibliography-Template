@@ -209,10 +209,18 @@ export class NoteCreator {
     const authorLinks = authorNames.map(wikilink);
     const journalLink = journalName ? wikilink(journalName) : null;
 
-    const file = await this.app.vault.create(
-      filePath,
-      await this.templateContent("Article Template")
-    );
+    let content = await this.templateContent("Article Template");
+    if (metadata.abstract) {
+      // Match the Abstract heading, consume its trailing newline and ALL
+      // subsequent blank lines from the template, then insert exactly one
+      // blank line before the abstract text.
+      content = content.replace(
+        /^(#{1,6}\s+Abstract)\s*\n(\s*\n)*/im,
+        `$1\n\n${metadata.abstract}\n\n`
+      );
+    }
+
+    const file = await this.app.vault.create(filePath, content);
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       fm["type"] = "Article";
       fm["doi"] = metadata.doi ?? null;

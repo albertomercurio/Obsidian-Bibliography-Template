@@ -22,7 +22,7 @@ export class ArxivService {
   }
 
   private async fetchSemanticScholar(id: string): Promise<PaperMetadata> {
-    const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${id}?fields=title,year,authors,externalIds,publicationVenue,journal`;
+    const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${id}?fields=title,year,authors,externalIds,publicationVenue,journal,abstract`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -56,6 +56,7 @@ export class ArxivService {
       journalFull:
         data.publicationVenue?.name ?? data.journal?.name ?? undefined,
       itemType: "preprint",
+      abstract: data.abstract ?? undefined,
     };
   }
 
@@ -70,6 +71,7 @@ export class ArxivService {
     const xml = await feedResp.text();
 
     const title = extractXmlTag(xml, "title", 1) ?? "Untitled";
+    const summary = extractXmlTag(xml, "summary");
     const published = extractXmlTag(xml, "published") ?? "";
     const year = published ? parseInt(published.substring(0, 4), 10) : 0;
 
@@ -86,6 +88,7 @@ export class ArxivService {
       year,
       authors,
       itemType: "preprint",
+      abstract: summary ?? undefined,
     };
   }
 }

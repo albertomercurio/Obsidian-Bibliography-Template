@@ -36,6 +36,13 @@ export interface PaperMetadata {
   /** For books */
   isbn?: string;
   itemType: "article" | "book" | "preprint";
+  abstract?: string;
+  /**
+   * Title with math rendered as inline LaTeX ($...$). Used exclusively for
+   * .bib output. Do NOT use for filenames or frontmatter — Obsidian won't
+   * render LaTeX there.
+   */
+  titleLatex?: string;
 }
 
 export interface AuthorRaw {

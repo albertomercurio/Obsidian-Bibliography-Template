@@ -1,4 +1,70 @@
+import { MathMLToLaTeX } from "mathml-to-latex";
 import type { AuthorRaw, PaperMetadata } from "./types";
+
+// ---------------------------------------------------------------------------
+// Markup helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts MathML fragments embedded in a string to inline LaTeX ($...$),
+ * then strips any remaining XML tags and decodes HTML entities.
+ * Used for bibtex title and note abstract.
+ */
+function convertMathML(raw: string): string {
+  // Replace each <prefix:math ...>...</prefix:math> block with $latex$
+  const withLatex = raw.replace(
+    /<([a-z]+):math[\s\S]*?<\/\1:math>/gi,
+    (block, prefix) => {
+      const unprefixed = block.replace(new RegExp(`\\b${prefix}:`, "g"), "");
+      try {
+        const latex = MathMLToLaTeX.convert(unprefixed);
+        return `$${latex}$`;
+      } catch {
+        // Fall back to plain text if conversion fails
+        return block.replace(/<[^>]*>/g, " ");
+      }
+    }
+  );
+  // Strip any remaining structural XML (e.g. JATS <jats:p>), decode entities,
+  // and normalise whitespace
+  return withLatex
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#([0-9]+);/g, (_, dec) =>
+      String.fromCodePoint(parseInt(dec, 10))
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanMarkup(raw: string): string {
+  return raw
+    .replace(/<[^>]*>/g, "")          // strip all XML/HTML tags (MathML, JATS…)
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#([0-9]+);/g, (_, dec) =>
+      String.fromCodePoint(parseInt(dec, 10))
+    )
+    .replace(/\s+/g, " ")             // collapse all whitespace to single space
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
+// CrossrefService
+// ---------------------------------------------------------------------------
 
 export class CrossrefService {
   async fetchByDOI(doi: string): Promise<PaperMetadata> {
@@ -30,9 +96,16 @@ export class CrossrefService {
         : undefined,
     }));
 
-    const title: string = Array.isArray(work.title)
+    const rawTitle: string = Array.isArray(work.title)
       ? work.title[0]
       : work.title ?? "Untitled";
+    const title: string = cleanMarkup(rawTitle);
+    // titleLatex preserves math as inline LaTeX for use in .bib files
+    const titleLatex: string = convertMathML(rawTitle);
+
+    const abstract: string | undefined = work.abstract
+      ? convertMathML(work.abstract)
+      : undefined;
 
     const year: number =
       work.published?.["date-parts"]?.[0]?.[0] ??
@@ -69,6 +142,8 @@ export class CrossrefService {
       url: work.URL,
       isbn: work.ISBN?.[0]?.replace(/-/g, ""),
       itemType,
+      abstract,
+      titleLatex,
     };
   }
 
