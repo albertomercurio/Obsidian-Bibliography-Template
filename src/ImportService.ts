@@ -9,6 +9,13 @@ import { VaultIndex, normDoi } from "./VaultIndex";
 import { NoteCreator } from "./NoteCreator";
 import { DisambiguationModal } from "./DisambiguationModal";
 
+type DeferredImportAction = () => Promise<void>;
+
+interface PlannedEntityResolution {
+  displayName: string;
+  actions: DeferredImportAction[];
+}
+
 // ---------------------------------------------------------------------------
 // Input detection
 // ---------------------------------------------------------------------------
@@ -104,15 +111,27 @@ export class ImportService {
 
     // ---- 3. Resolve authors ------------------------------------------------
     const authorNames: string[] = [];
+    const deferredActions: DeferredImportAction[] = [];
     for (const author of metadata.authors) {
-      const name = await this.resolveAuthor(author);
-      authorNames.push(name);
+      const resolution = await this.resolveAuthor(author);
+      if (resolution === null) {
+        new Notice("Import canceled. No article note was created.", 5000);
+        return;
+      }
+      authorNames.push(resolution.displayName);
+      deferredActions.push(...resolution.actions);
     }
 
     // ---- 4. Resolve journal ------------------------------------------------
     let journalName: string | undefined;
     if (metadata.journalFull) {
-      journalName = await this.resolveJournal(metadata);
+      const resolvedJournal = await this.resolveJournal(metadata);
+      if (resolvedJournal === null) {
+        new Notice("Import canceled. No article note was created.", 5000);
+        return;
+      }
+      journalName = resolvedJournal.displayName;
+      deferredActions.push(...resolvedJournal.actions);
     }
 
     // ---- 5. Generate bibtex ------------------------------------------------
@@ -124,6 +143,14 @@ export class ImportService {
     // ---- 6. Create note ----------------------------------------------------
     let file: TFile;
     try {
+      if (this.creator.publicationFileExists(metadata)) {
+        throw new Error("A note with the same filename already exists.");
+      }
+
+      for (const action of deferredActions) {
+        await action();
+      }
+
       if (metadata.itemType === "book") {
         file = await this.creator.createBook({
           metadata,
@@ -151,14 +178,21 @@ export class ImportService {
   // Author resolution
   // --------------------------------------------------------------------------
 
-  private async resolveAuthor(author: AuthorRaw): Promise<string> {
+  private async resolveAuthor(
+    author: AuthorRaw
+  ): Promise<PlannedEntityResolution | null> {
     const { given, family, orcid } = author;
     const match = this.index.findPerson(given, family, orcid);
 
     if (match.kind === "exact" && match.file) {
-      // Update ORCID on existing file if we now have it and it didn't before
-      if (orcid) await this.setOrcidIfMissing(match.file, orcid);
-      return match.file.basename;
+      return {
+        displayName: match.file.basename,
+        actions: orcid
+          ? [async () => {
+              await this.setOrcidIfMissing(match.file!, orcid);
+            }]
+          : [],
+      };
     }
 
     if (match.kind === "partial" && match.file) {
@@ -183,16 +217,38 @@ export class ImportService {
       });
       const choice = await modal.ask();
 
+      if (choice === "abort") {
+        return null;
+      }
       if (choice === "same") {
-        if (orcid) await this.setOrcidIfMissing(match.file, orcid);
-        return match.file.basename;
+        return {
+          displayName: match.file.basename,
+          actions: orcid
+            ? [async () => {
+                await this.setOrcidIfMissing(match.file!, orcid);
+              }]
+            : [],
+        };
       }
       if (choice === "merge") {
-        return await this.creator.mergePerson(match.file, { given, family, orcid });
+        const plannedMerge = this.creator.planMergePerson(match.file, {
+          given,
+          family,
+          orcid,
+        });
+        return {
+          displayName: plannedMerge.basename,
+          actions: [async () => {
+            await plannedMerge.commit();
+          }],
+        };
       }
       if (choice === "skip") {
         // No note created — the wikilink will be unresolved until dealt with manually.
-        return `${given} ${family}`.trim();
+        return {
+          displayName: `${given} ${family}`.trim(),
+          actions: [],
+        };
       }
       // "different" → fall through to create a new note
     }
@@ -200,23 +256,38 @@ export class ImportService {
     // No match in vault. Try ORCID API if enabled.
     if (!orcid && !this.settings.skipOrcidSearch && given && family) {
       const foundOrcid = await this.tryOrcidSearch(given, family);
+      if (foundOrcid === null) {
+        return null;
+      }
       if (foundOrcid) {
-        return await this.creator.createPerson({
+        const plannedPerson = this.creator.planCreatePerson({
           given,
           family,
           orcid: foundOrcid,
         });
+        return {
+          displayName: plannedPerson.basename,
+          actions: [async () => {
+            await plannedPerson.commit();
+          }],
+        };
       }
     }
 
-    return await this.creator.createPerson({ given, family, orcid });
+    const plannedPerson = this.creator.planCreatePerson({ given, family, orcid });
+    return {
+      displayName: plannedPerson.basename,
+      actions: [async () => {
+        await plannedPerson.commit();
+      }],
+    };
   }
 
   /** Interactively search ORCID by name. Returns an ORCID if user confirms, else undefined. */
   private async tryOrcidSearch(
     given: string,
     family: string
-  ): Promise<string | undefined> {
+  ): Promise<string | undefined | null> {
     let candidates: string[];
     try {
       candidates = await this.orcid.searchByName(given, family);
@@ -253,6 +324,9 @@ export class ImportService {
       },
     });
     const choice = await modal.ask();
+    if (choice === "abort") {
+      return null;
+    }
     return choice === "same" ? orcidId : undefined;
   }
 
@@ -260,27 +334,35 @@ export class ImportService {
   // Journal resolution
   // --------------------------------------------------------------------------
 
-  private async resolveJournal(metadata: PaperMetadata): Promise<string> {
+  private async resolveJournal(
+    metadata: PaperMetadata
+  ): Promise<PlannedEntityResolution | null> {
     const name = metadata.journalFull!;
     const match = this.index.findJournal(name);
 
     if (match.kind === "exact" && match.file) {
-      return match.file.basename;
+      return { displayName: match.file.basename, actions: [] };
     }
 
     // Also try by short name
     if (metadata.journalShort) {
       const shortMatch = this.index.findJournal(metadata.journalShort);
       if (shortMatch.kind === "exact" && shortMatch.file) {
-        return shortMatch.file.basename;
+        return { displayName: shortMatch.file.basename, actions: [] };
       }
     }
 
     // Not found — create journal note
-    return await this.creator.createJournal({
+    const plannedJournal = this.creator.planCreateJournal({
       fullName: name,
       shortName: metadata.journalShort,
     });
+    return {
+      displayName: plannedJournal.basename,
+      actions: [async () => {
+        await plannedJournal.commit();
+      }],
+    };
   }
 
   // --------------------------------------------------------------------------

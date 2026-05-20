@@ -1,6 +1,11 @@
 import { App, Modal, Setting } from "obsidian";
 
-export type DisambiguationChoice = "same" | "different" | "merge" | "skip";
+export type DisambiguationChoice =
+  | "same"
+  | "different"
+  | "merge"
+  | "skip"
+  | "abort";
 
 export interface DisambiguationData {
   /** Short label for what is being compared, e.g. "author" or "journal" */
@@ -28,7 +33,7 @@ export interface DisambiguationData {
  * from the API is the same as a candidate already in the vault.
  */
 export class DisambiguationModal extends Modal {
-  private choice: DisambiguationChoice = "skip";
+  private choice: DisambiguationChoice = "abort";
   private resolve!: (c: DisambiguationChoice) => void;
 
   constructor(
@@ -55,6 +60,11 @@ export class DisambiguationModal extends Modal {
 
     contentEl.createEl("p", {
       text: `The imported paper references a ${data.entityType} that may already exist in your vault. Are these the same?`,
+    });
+
+    contentEl.createEl("p", {
+      text: "Close this dialog to cancel the import.",
+      cls: "research-importer-hint",
     });
 
     // Two-column comparison

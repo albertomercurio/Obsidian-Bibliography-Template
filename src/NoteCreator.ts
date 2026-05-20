@@ -31,6 +31,11 @@ function wikilink(name: string): string {
   return `[[${name}]]`;
 }
 
+export interface PlannedNoteAction<T> {
+  basename: string;
+  commit: () => Promise<T>;
+}
+
 // ---------------------------------------------------------------------------
 // NoteCreator
 // ---------------------------------------------------------------------------
@@ -65,6 +70,55 @@ export class NoteCreator {
     if (!this.app.vault.getAbstractFileByPath(norm)) {
       await this.app.vault.createFolder(norm);
     }
+  }
+
+  personBasename(params: { given: string; family: string }): string {
+    return sanitizeFilename(`${params.given} ${params.family}`.trim(), 100);
+  }
+
+  journalBasename(params: { fullName: string }): string {
+    return sanitizeFilename(params.fullName, 120);
+  }
+
+  planCreatePerson(params: {
+    given: string;
+    family: string;
+    orcid?: string;
+  }): PlannedNoteAction<string> {
+    return {
+      basename: this.personBasename(params),
+      commit: () => this.createPerson(params),
+    };
+  }
+
+  planMergePerson(
+    file: TFile,
+    params: { given: string; family: string; orcid?: string }
+  ): PlannedNoteAction<string> {
+    return {
+      basename: this.personBasename(params),
+      commit: () => this.mergePerson(file, params),
+    };
+  }
+
+  planCreateJournal(params: {
+    fullName: string;
+    shortName?: string;
+  }): PlannedNoteAction<string> {
+    return {
+      basename: this.journalBasename(params),
+      commit: () => this.createJournal(params),
+    };
+  }
+
+  publicationFileExists(metadata: PaperMetadata): boolean {
+    const firstFamily = metadata.authors[0]?.family ?? "Unknown";
+    const filename = articleFilename(metadata, firstFamily);
+    const folder = metadata.itemType === "book"
+      ? this.settings.booksFolder
+      : this.settings.articlesFolder;
+    const filePath = normalizePath(`${folder}/${filename}.md`);
+    return Boolean(this.app.vault.getAbstractFileByPath(filePath));
   }
 
   // --------------------------------------------------------------------------
@@ -120,8 +174,7 @@ export class NoteCreator {
     family: string;
     orcid?: string;
   }): Promise<string> {
-    const displayName = `${params.given} ${params.family}`.trim();
-    const safeName = sanitizeFilename(displayName, 100);
+    const safeName = this.personBasename(params);
     const folder = this.settings.peopleFolder;
     await this.ensureFolder(folder);
     const filePath = normalizePath(`${folder}/${safeName}.md`);
@@ -158,7 +211,7 @@ export class NoteCreator {
     fullName: string;
     shortName?: string;
   }): Promise<string> {
-    const safeName = sanitizeFilename(params.fullName, 120);
+    const safeName = this.journalBasename(params);
     const folder = this.settings.journalsFolder;
     await this.ensureFolder(folder);
     const filePath = normalizePath(`${folder}/${safeName}.md`);
