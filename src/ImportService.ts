@@ -8,8 +8,11 @@ import { generateBibtex } from "./BibtexGenerator";
 import { VaultIndex, normDoi } from "./VaultIndex";
 import { NoteCreator } from "./NoteCreator";
 import { DisambiguationModal } from "./DisambiguationModal";
+import { AuthorOverflowModal } from "./AuthorOverflowModal";
 
 type DeferredImportAction = () => Promise<void>;
+
+const OVERFLOW_VISIBLE_AUTHORS = 1;
 
 interface PlannedEntityResolution {
   displayName: string;
@@ -109,10 +112,16 @@ export class ImportService {
       }
     }
 
+    const visibleAuthors = await this.getVisibleAuthors(metadata);
+    if (visibleAuthors === null) {
+      new Notice("Import canceled. No article note was created.", 5000);
+      return;
+    }
+
     // ---- 3. Resolve authors ------------------------------------------------
     const authorNames: string[] = [];
     const deferredActions: DeferredImportAction[] = [];
-    for (const author of metadata.authors) {
+    for (const author of visibleAuthors) {
       const resolution = await this.resolveAuthor(author);
       if (resolution === null) {
         new Notice("Import canceled. No article note was created.", 5000);
@@ -172,6 +181,28 @@ export class ImportService {
 
     new Notice(`✅ Imported: "${file.basename}"`, 5000);
     this.app.workspace.openLinkText(file.basename, "", false);
+  }
+
+  private async getVisibleAuthors(
+    metadata: PaperMetadata
+  ): Promise<AuthorRaw[] | null> {
+    const maxAuthors = Math.max(0, this.settings.maxAuthors ?? 0);
+    if (maxAuthors === 0 || metadata.authors.length <= maxAuthors) {
+      return metadata.authors;
+    }
+
+    const confirmed = await new AuthorOverflowModal(
+      this.app,
+      metadata.authors.length,
+      maxAuthors,
+      OVERFLOW_VISIBLE_AUTHORS
+    ).ask();
+
+    if (!confirmed) {
+      return null;
+    }
+
+    return metadata.authors.slice(0, OVERFLOW_VISIBLE_AUTHORS);
   }
 
   // --------------------------------------------------------------------------

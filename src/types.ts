@@ -6,6 +6,7 @@ export interface PluginSettings {
   peopleFolder: string;
   journalsFolder: string;
   skipOrcidSearch: boolean;
+  maxAuthors: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   peopleFolder: "People",
   journalsFolder: "Journals",
   skipOrcidSearch: false,
+  maxAuthors: 25,
 };
 
 // Normalised metadata returned by any fetch service

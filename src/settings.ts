@@ -83,5 +83,26 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName("Maximum supported authors")
+      .setDesc(
+        "If an import has more authors than this limit, the plugin asks for confirmation and, if you continue, links only the first author in Obsidian while keeping the full BibTeX author list. Use 0 for unlimited."
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("25")
+          .setValue(String(this.plugin.settings.maxAuthors))
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+            const parsed = Number.parseInt(trimmed || "0", 10);
+            this.plugin.settings.maxAuthors =
+              Number.isFinite(parsed) && parsed >= 0 ? parsed : 25;
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = "number";
+        text.inputEl.min = "0";
+        text.inputEl.step = "1";
+      });
   }
 }
