@@ -125,6 +125,8 @@ export class CrossrefService {
       ? work["short-container-title"][0]
       : work["short-container-title"];
 
+    const pages: string | undefined = work.page ?? work["article-number"];
+
     const itemType = this.resolveItemType(work.type);
 
     return {
@@ -137,7 +139,7 @@ export class CrossrefService {
       journalShort: journalShort || undefined,
       volume: work.volume,
       issue: work.issue,
-      pages: work.page,
+      pages,
       publisher: work.publisher,
       url: work.URL,
       isbn: work.ISBN?.[0]?.replace(/-/g, ""),
