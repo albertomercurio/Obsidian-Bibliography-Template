@@ -67,6 +67,8 @@ export function generateBibtex(opts: BibtexOptions): string {
   const firstAuthor = metadata.authors[0];
   const firstFamily = firstAuthor
     ? sanitizeKey(firstAuthor.family)
+    : metadata.itemType === "book"
+    ? sanitizeKey(metadata.publisher ?? "Book")
     : "Unknown";
   const year = metadata.year > 0 ? String(metadata.year) : "XXXX";
   const words = titleWords(metadata.title);
@@ -94,7 +96,7 @@ export function generateBibtex(opts: BibtexOptions): string {
   const fields: [string, string | undefined][] = [];
 
   if (entryType === "article") {
-    fields.push(["author", authorField]);
+    if (authorField) fields.push(["author", authorField]);
     // NOTE: bibtex titles are displayed verbatim in reference managers and
     // compiled documents — accuracy matters. titleLatex preserves math symbols
     // as proper LaTeX (e.g. $\mathbb{Z}_{3}$); fall back to plain text only
@@ -108,7 +110,7 @@ export function generateBibtex(opts: BibtexOptions): string {
     if (metadata.doi) fields.push(["doi", metadata.doi]);
     if (metadata.url) fields.push(["url", metadata.url]);
   } else if (entryType === "book") {
-    fields.push(["author", authorField]);
+    if (authorField) fields.push(["author", authorField]);
     fields.push(["title", `{${toLatex(metadata.title)}}`]);
     if (metadata.publisher) fields.push(["publisher", toLatex(metadata.publisher)]);
     fields.push(["year", year]);
@@ -116,7 +118,7 @@ export function generateBibtex(opts: BibtexOptions): string {
     if (metadata.url) fields.push(["url", metadata.url]);
   } else {
     // preprint / misc
-    fields.push(["author", authorField]);
+    if (authorField) fields.push(["author", authorField]);
     fields.push(["title", `{${toLatex(metadata.title)}}`]);
     fields.push(["year", year]);
     if (metadata.arxivId) {

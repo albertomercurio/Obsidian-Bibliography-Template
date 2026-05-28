@@ -1,5 +1,6 @@
 import { MathMLToLaTeX } from "mathml-to-latex";
 import type { AuthorRaw, PaperMetadata } from "./types";
+import { OpenLibraryService } from "./OpenLibraryService";
 
 // ---------------------------------------------------------------------------
 // Markup helpers
@@ -67,6 +68,10 @@ function cleanMarkup(raw: string): string {
 // ---------------------------------------------------------------------------
 
 export class CrossrefService {
+  // Some Crossref book records contain DOI, title, year, and ISBN but omit the
+  // people fields entirely. For those cases we try a secondary ISBN lookup.
+  private openLibrary = new OpenLibraryService();
+
   async fetchByDOI(doi: string): Promise<PaperMetadata> {
     const clean = doi
       .replace(/^https?:\/\/doi\.org\//i, "")
@@ -129,7 +134,7 @@ export class CrossrefService {
 
     const itemType = this.resolveItemType(work.type);
 
-    return {
+    const metadata: PaperMetadata = {
       inputType: "doi",
       doi: clean,
       title,
@@ -147,6 +152,14 @@ export class CrossrefService {
       abstract,
       titleLatex,
     };
+
+    if (metadata.itemType === "book" && metadata.authors.length === 0 && metadata.isbn) {
+      // Keep the DOI payload as the primary source and enrich only when the
+      // book record is missing authors but still gives us an ISBN to resolve.
+      return await this.openLibrary.enrichBookMetadata(metadata);
+    }
+
+    return metadata;
   }
 
   private resolveItemType(

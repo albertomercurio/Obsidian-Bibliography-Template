@@ -20,7 +20,11 @@ function articleFilename(
   metadata: PaperMetadata,
   firstAuthorFamily: string
 ): string {
-  const surname = sanitizeFilename(firstAuthorFamily, 40);
+  const fallbackLabel =
+    metadata.itemType === "book"
+      ? metadata.publisher ?? "Book"
+      : "Unknown";
+  const surname = sanitizeFilename(firstAuthorFamily || fallbackLabel, 40);
   const year = metadata.year > 0 ? String(metadata.year) : "XXXX";
   const title = sanitizeFilename(metadata.title, 120);
   return `${surname} - ${year} - ${title}`;
@@ -112,7 +116,7 @@ export class NoteCreator {
   }
 
   publicationFileExists(metadata: PaperMetadata): boolean {
-    const firstFamily = metadata.authors[0]?.family ?? "Unknown";
+    const firstFamily = metadata.authors[0]?.family ?? "";
     const filename = articleFilename(metadata, firstFamily);
     const folder = metadata.itemType === "book"
       ? this.settings.booksFolder
@@ -253,7 +257,7 @@ export class NoteCreator {
   }): Promise<TFile> {
     const { metadata, bibtex, authorNames, journalName } = params;
     const firstFamily =
-      metadata.authors[0]?.family ?? "Unknown";
+      metadata.authors[0]?.family ?? "";
     const filename = articleFilename(metadata, firstFamily);
     const folder = this.settings.articlesFolder;
     await this.ensureFolder(folder);
@@ -301,7 +305,7 @@ export class NoteCreator {
     authorNames: string[];
   }): Promise<TFile> {
     const { metadata, bibtex, authorNames } = params;
-    const firstFamily = metadata.authors[0]?.family ?? "Unknown";
+    const firstFamily = metadata.authors[0]?.family ?? "";
     const filename = articleFilename(metadata, firstFamily);
     const folder = this.settings.booksFolder;
     await this.ensureFolder(folder);
