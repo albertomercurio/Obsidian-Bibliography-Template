@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import { MathMLToLaTeX } from "mathml-to-latex";
 import type { AuthorRaw, PaperMetadata } from "./types";
 import { OpenLibraryService } from "./OpenLibraryService";
@@ -79,15 +80,15 @@ export class CrossrefService {
       .trim();
 
     const url = `https://api.crossref.org/works/${encodeURIComponent(clean)}`;
-    const response = await fetch(url);
+    const response = await requestUrl({ url, throw: false });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(
         `Crossref returned ${response.status} for DOI "${clean}". Check that the DOI is correct.`
       );
     }
 
-    const json = await response.json();
+    const json = response.json;
     const work = json.message;
 
     const authors: AuthorRaw[] = (work.author ?? []).map((a: any) => ({

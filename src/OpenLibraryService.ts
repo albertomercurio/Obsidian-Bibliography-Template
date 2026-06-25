@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import type { AuthorRaw, PaperMetadata } from "./types";
 
 interface OpenLibraryEditionResponse {
@@ -40,12 +41,15 @@ export class OpenLibraryService {
   }
 
   private async fetchEdition(isbn: string): Promise<OpenLibraryEditionResponse | null> {
-    const response = await fetch(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`);
-    if (!response.ok) {
+    const response = await requestUrl({
+      url: `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
+      throw: false,
+    });
+    if (response.status < 200 || response.status >= 300) {
       return null;
     }
 
-    return await response.json();
+    return response.json;
   }
 
   private async resolveAuthors(authorRefs: Array<{ key?: string }>): Promise<AuthorRaw[]> {
@@ -58,12 +62,15 @@ export class OpenLibraryService {
         .map((author) => author.key)
         .filter((key): key is string => Boolean(key))
         .map(async (key) => {
-          const response = await fetch(`https://openlibrary.org${key}.json`);
-          if (!response.ok) {
+          const response = await requestUrl({
+            url: `https://openlibrary.org${key}.json`,
+            throw: false,
+          });
+          if (response.status < 200 || response.status >= 300) {
             return null;
           }
 
-          const payload: OpenLibraryAuthorResponse = await response.json();
+          const payload: OpenLibraryAuthorResponse = response.json;
           return payload.name ? splitAuthorName(payload.name) : null;
         })
     );

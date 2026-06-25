@@ -1,3 +1,5 @@
+import { requestUrl } from "obsidian";
+
 export interface OrcidRecord {
   orcid: string;
   givenName: string;
@@ -24,14 +26,14 @@ export class OrcidService {
     const givenQ = encodeURIComponent(givenFirst);
 
     const url = `${this.BASE}/search/?q=family-name:${familyQ}+AND+given-names:${givenQ}&rows=5`;
-    const response = await fetch(url, { headers: this.HEADERS });
+    const response = await requestUrl({ url, headers: this.HEADERS, throw: false });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`ORCID search failed: ${response.status}`);
     }
 
     // Response is XML despite Accept header (ORCID quirk for search endpoint)
-    const text = await response.text();
+    const text = response.text;
     const matches = [...text.matchAll(/<common:path>([^<]+)<\/common:path>/g)];
     return matches.map((m) => m[1].trim());
   }
@@ -42,15 +44,15 @@ export class OrcidService {
    */
   async getRecord(orcid: string): Promise<OrcidRecord> {
     const url = `${this.BASE}/${orcid}/person`;
-    const response = await fetch(url, { headers: this.HEADERS });
+    const response = await requestUrl({ url, headers: this.HEADERS, throw: false });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(
         `ORCID record fetch failed for ${orcid}: ${response.status}`
       );
     }
 
-    const data = await response.json();
+    const data = response.json;
 
     const givenName: string =
       data.name?.["given-names"]?.value ?? "";
