@@ -11,7 +11,18 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = process.argv[2] === "production";
 
-const VAULT_PLUGIN_DIR = process.env.VAULT_PLUGIN_DIR ?? null;
+function resolveVaultPluginDir() {
+  if (process.env.VAULT_PLUGIN_DIR) return process.env.VAULT_PLUGIN_DIR.trim();
+  try {
+    const fromFile = fs.readFileSync(".vault-path", "utf8").trim();
+    if (fromFile) return fromFile;
+  } catch {
+    // No .vault-path file — fall through and skip the vault copy.
+  }
+  return null;
+}
+
+const VAULT_PLUGIN_DIR = resolveVaultPluginDir();
 
 const ctx = await esbuild.context({
   banner: { js: banner },

@@ -102,6 +102,20 @@ cd /path/to/Obsidian-Bibliography-Template
 npm install
 ```
 
+### Point the build at your vault (first time only)
+
+The build can install itself into your vault automatically. Tell it where by creating a
+`.vault-path` file in the repo root containing the absolute path to the plugin folder inside your
+vault:
+
+```bash
+echo "/path/to/Your Vault/.obsidian/plugins/research-importer" > .vault-path
+```
+
+- `.vault-path` is **gitignored**, so your personal path never gets committed and this repo stays shareable.
+- Alternatively, set the `VAULT_PLUGIN_DIR` environment variable (it takes priority over the file).
+- If neither is set, `npm run build` still produces `main.js` but prints a notice and skips the vault copy — copy `main.js`, `manifest.json`, and `styles.css` over manually.
+
 ### Make a change and update the plugin
 
 1. Edit any `.ts` file in `src/` or `main.ts`.
@@ -109,7 +123,9 @@ npm install
    ```bash
    npm run build
    ```
-   This compiles TypeScript, bundles everything into `main.js`, and **automatically copies** `main.js`, `manifest.json`, and `styles.css` to the vault's plugin folder:
+   This compiles TypeScript, bundles everything into `main.js`, and (when `.vault-path` /
+   `VAULT_PLUGIN_DIR` is set) **automatically copies** `main.js`, `manifest.json`, and `styles.css`
+   to the vault's plugin folder:
    ```
    …/Your Vault/.obsidian/plugins/research-importer/
    ```
