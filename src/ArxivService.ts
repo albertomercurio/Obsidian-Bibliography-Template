@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import type { AuthorRaw, PaperMetadata } from "./types";
 import { CrossrefService } from "./CrossrefService";
 
@@ -23,18 +24,20 @@ export class ArxivService {
 
   private async fetchSemanticScholar(id: string): Promise<PaperMetadata> {
     const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${id}?fields=title,year,authors,externalIds,publicationVenue,journal,abstract`;
-    const response = await fetch(url);
+    const response = await requestUrl({ url, throw: false });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`Semantic Scholar: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = response.json;
 
     const doi: string | undefined = data.externalIds?.DOI;
 
-    // If we have a DOI, delegate to Crossref for maximum quality
-    if (doi) {
+    // If we have a *real* journal DOI, delegate to Crossref for maximum
+    // quality. Skip arXiv proxy DOIs (10.48550/arXiv.*) — those live on
+    // DataCite and would 404 on Crossref; treat the paper as a preprint.
+    if (doi && !/^10\.48550\/arxiv/i.test(doi)) {
       const meta = await this.crossref.fetchByDOI(doi);
       // Keep arXiv ID even if published
       meta.arxivId = id;
@@ -50,11 +53,16 @@ export class ArxivService {
     return {
       inputType: "arxiv",
       arxivId: id,
+      // Every arXiv submission has a DataCite DOI (10.48550/arXiv.<id>); use the
+      // one Semantic Scholar reports, else construct it.
+      doi: doi ?? `10.48550/arXiv.${id}`,
       title: data.title ?? "Untitled",
       year: data.year ?? 0,
       authors,
-      journalFull:
-        data.publicationVenue?.name ?? data.journal?.name ?? undefined,
+      // arXiv is the venue for a preprint. Once it is published, the "Refresh
+      // metadata" command replaces this with the real journal.
+      journalFull: "arXiv",
+      url: `https://arxiv.org/abs/${id}`,
       itemType: "preprint",
       abstract: data.abstract ?? undefined,
     };
@@ -62,13 +70,13 @@ export class ArxivService {
 
   private async fetchArxivAtom(id: string): Promise<PaperMetadata> {
     const feedUrl = `https://export.arxiv.org/api/query?id_list=${id}`;
-    const feedResp = await fetch(feedUrl);
-    if (!feedResp.ok) {
+    const feedResp = await requestUrl({ url: feedUrl, throw: false });
+    if (feedResp.status < 200 || feedResp.status >= 300) {
       throw new Error(
         `arXiv returned ${feedResp.status} for ID "${id}". Check that the arXiv ID is correct.`
       );
     }
-    const xml = await feedResp.text();
+    const xml = feedResp.text;
 
     const title = extractXmlTag(xml, "title", 1) ?? "Untitled";
     const summary = extractXmlTag(xml, "summary");
@@ -84,9 +92,12 @@ export class ArxivService {
     return {
       inputType: "arxiv",
       arxivId: id,
+      doi: `10.48550/arXiv.${id}`,
       title: title.trim(),
       year,
       authors,
+      journalFull: "arXiv",
+      url: `https://arxiv.org/abs/${id}`,
       itemType: "preprint",
       abstract: summary ?? undefined,
     };

@@ -71,6 +71,22 @@ export default class ResearchImporterPlugin extends Plugin {
       callback: () => this.regenerateAllBibtex(),
     });
 
+    this.addCommand({
+      id: "refresh-active-note",
+      name: "Refresh metadata for active note (check if preprint is published)",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) return false;
+        if (!checking) {
+          this.importer.refreshActiveNote(file).catch((err) => {
+            new Notice(`❌ Refresh failed: ${err.message}`, 8000);
+            console.error("[ResearchImporter]", err);
+          });
+        }
+        return true;
+      },
+    });
+
     // ---- Settings tab ------------------------------------------------------
     this.addSettingTab(new ResearchImporterSettingTab(this.app, this));
 

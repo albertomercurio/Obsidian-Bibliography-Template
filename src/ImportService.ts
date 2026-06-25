@@ -26,6 +26,16 @@ interface PlannedEntityResolution {
 function detectInput(raw: string): { type: "doi" | "arxiv"; id: string } {
   const s = raw.trim();
 
+  // arXiv proxy DOI (registered with DataCite, not Crossref):
+  // "10.48550/arXiv.2603.13030" → arXiv id "2603.13030". Must be checked
+  // BEFORE the generic DOI rule below, which would otherwise swallow it.
+  const arxivDoi = s.match(
+    /^(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)?10\.48550\/arxiv\.(.+)$/i
+  );
+  if (arxivDoi) {
+    return { type: "arxiv", id: arxivDoi[1] };
+  }
+
   // DOI: starts with "10." or "doi:" or "https://doi.org/"
   if (
     /^10\.\d{4,}/i.test(s) ||
@@ -181,6 +191,79 @@ export class ImportService {
 
     new Notice(`✅ Imported: "${file.basename}"`, 5000);
     this.app.workspace.openLinkText(file.basename, "", false);
+  }
+
+  // --------------------------------------------------------------------------
+  // Refresh: promote a preprint note to its published version
+  // --------------------------------------------------------------------------
+
+  async refreshActiveNote(file: TFile): Promise<void> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const arxivId: string | undefined = fm?.["arxiv_id"]
+      ? String(fm["arxiv_id"]).trim()
+      : undefined;
+
+    if (fm?.["type"] !== "Article" || !arxivId) {
+      new Notice(
+        "Refresh only works on arXiv-sourced article notes (need an arxiv_id).",
+        6000
+      );
+      return;
+    }
+
+    // ---- Re-fetch metadata -------------------------------------------------
+    let metadata: PaperMetadata;
+    try {
+      new Notice("Checking for published version…", 3000);
+      metadata = await this.arxiv.fetchByArxivId(arxivId);
+    } catch (err: unknown) {
+      new Notice(`❌ ${formatFetchError(err)}`, 7000);
+      return;
+    }
+
+    // ---- Detect preprint → published transition ----------------------------
+    // A preprint carries the arXiv DOI (10.48550/arXiv.*) and journal "[[arXiv]]".
+    // A real journal DOI from the fetch means it has now been published.
+    const fetchedJournalDoi =
+      !!metadata.doi && !/^10\.48550\/arxiv/i.test(metadata.doi);
+    const currentDoi = fm["doi"] ? String(fm["doi"]) : "";
+    const alreadyPublished =
+      !!currentDoi && !/^10\.48550\/arxiv/i.test(currentDoi);
+    if (!fetchedJournalDoi || !metadata.journalFull || alreadyPublished) {
+      new Notice("No publication update found — still a preprint.", 5000);
+      return;
+    }
+
+    // ---- Resolve journal (create the note if missing) ----------------------
+    const resolvedJournal = await this.resolveJournal(metadata);
+    if (resolvedJournal === null) {
+      new Notice("Refresh canceled. The note was not changed.", 5000);
+      return;
+    }
+    for (const action of resolvedJournal.actions) {
+      await action();
+    }
+
+    // ---- Regenerate bibtex (@misc → @article) ------------------------------
+    const bibtex = generateBibtex({
+      metadata,
+      journalAbbrev: metadata.journalShort,
+    });
+
+    // ---- Write back --------------------------------------------------------
+    await this.app.fileManager.processFrontMatter(file, (fmObj) => {
+      fmObj["doi"] = metadata.doi ?? null;
+      fmObj["journal"] = `[[${resolvedJournal.displayName}]]`;
+      fmObj["year"] = metadata.year > 0 ? metadata.year : fmObj["year"] ?? null;
+      fmObj["url"] = metadata.url ?? fmObj["url"] ?? null;
+      fmObj["bibtex"] = bibtex;
+    });
+    this.index.indexFile(file);
+
+    new Notice(
+      `✅ Updated to published version: "${resolvedJournal.displayName}"`,
+      6000
+    );
   }
 
   private async getVisibleAuthors(
