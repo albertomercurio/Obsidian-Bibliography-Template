@@ -71,48 +71,18 @@ function firstString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-function hasIssn(work: any, expected: Set<string>): boolean {
-  const issns = [
-    ...stringArray(work.ISSN),
-    ...(Array.isArray(work["issn-type"])
-      ? work["issn-type"]
-          .map((entry: any) => entry?.value)
-          .filter((value: unknown): value is string => typeof value === "string")
-      : []),
-  ];
-
-  return issns.some((issn) => expected.has(issn));
-}
-
-const ZEITSCHRIFT_PHYSIK_ISSNS = new Set(["1434-6001", "1434-601X"]);
-
 /**
- * Crossref's record for 10.1007/BF01342591 currently stores the journal as
- * "Zeitschrift f\uFFFDr Physik". Keep this repair narrow and identifier-backed
- * instead of guessing replacements for every Unicode replacement character.
+ * Some older Crossref records contain U+FFFD, meaning the original character
+ * has already been lost before we receive the JSON. Do not guess arbitrary
+ * replacements; only repair unambiguous word fragments that are safe across
+ * journals, e.g. German "f�r" -> "für".
  */
-function repairJournalFull(
-  work: any,
-  journalFull: string | undefined,
-  journalShort: string | undefined
-): string | undefined {
-  if (!journalFull) return undefined;
+function repairReplacementCharacters(value: string | undefined): string | undefined {
+  if (!value?.includes("\uFFFD")) return value;
 
-  const isKnownCorruptValue = journalFull === "Zeitschrift f\uFFFDr Physik";
-  const isKnownJournal =
-    hasIssn(work, ZEITSCHRIFT_PHYSIK_ISSNS) && journalShort === "Z. Physik";
-
-  if (isKnownCorruptValue || isKnownJournal) {
-    return "Zeitschrift für Physik";
-  }
-
-  return journalFull;
+  return value
+    .replace(/\bF\uFFFDr\b/g, "Für")
+    .replace(/\bf\uFFFDr\b/g, "für");
 }
 
 // ---------------------------------------------------------------------------
@@ -172,13 +142,11 @@ export class CrossrefService {
 
     const rawJournalFull = firstString(work["container-title"]);
     const rawJournalShort = firstString(work["short-container-title"]);
-    const journalShort = rawJournalShort
-      ? cleanMarkup(rawJournalShort)
-      : undefined;
-    const journalFull = repairJournalFull(
-      work,
-      rawJournalFull ? cleanMarkup(rawJournalFull) : undefined,
-      journalShort
+    const journalShort = repairReplacementCharacters(
+      rawJournalShort ? cleanMarkup(rawJournalShort) : undefined
+    );
+    const journalFull = repairReplacementCharacters(
+      rawJournalFull ? cleanMarkup(rawJournalFull) : undefined
     );
 
     const pages: string | undefined = work.page ?? work["article-number"];
