@@ -64,6 +64,57 @@ function cleanMarkup(raw: string): string {
     .trim();
 }
 
+function firstString(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : undefined;
+  }
+  return typeof value === "string" ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function hasIssn(work: any, expected: Set<string>): boolean {
+  const issns = [
+    ...stringArray(work.ISSN),
+    ...(Array.isArray(work["issn-type"])
+      ? work["issn-type"]
+          .map((entry: any) => entry?.value)
+          .filter((value: unknown): value is string => typeof value === "string")
+      : []),
+  ];
+
+  return issns.some((issn) => expected.has(issn));
+}
+
+const ZEITSCHRIFT_PHYSIK_ISSNS = new Set(["1434-6001", "1434-601X"]);
+
+/**
+ * Crossref's record for 10.1007/BF01342591 currently stores the journal as
+ * "Zeitschrift f\uFFFDr Physik". Keep this repair narrow and identifier-backed
+ * instead of guessing replacements for every Unicode replacement character.
+ */
+function repairJournalFull(
+  work: any,
+  journalFull: string | undefined,
+  journalShort: string | undefined
+): string | undefined {
+  if (!journalFull) return undefined;
+
+  const isKnownCorruptValue = journalFull === "Zeitschrift f\uFFFDr Physik";
+  const isKnownJournal =
+    hasIssn(work, ZEITSCHRIFT_PHYSIK_ISSNS) && journalShort === "Z. Physik";
+
+  if (isKnownCorruptValue || isKnownJournal) {
+    return "Zeitschrift für Physik";
+  }
+
+  return journalFull;
+}
+
 // ---------------------------------------------------------------------------
 // CrossrefService
 // ---------------------------------------------------------------------------
@@ -119,17 +170,16 @@ export class CrossrefService {
       work["published-online"]?.["date-parts"]?.[0]?.[0] ??
       0;
 
-    const journalFull: string | undefined = Array.isArray(
-      work["container-title"]
-    )
-      ? work["container-title"][0]
-      : work["container-title"];
-
-    const journalShort: string | undefined = Array.isArray(
-      work["short-container-title"]
-    )
-      ? work["short-container-title"][0]
-      : work["short-container-title"];
+    const rawJournalFull = firstString(work["container-title"]);
+    const rawJournalShort = firstString(work["short-container-title"]);
+    const journalShort = rawJournalShort
+      ? cleanMarkup(rawJournalShort)
+      : undefined;
+    const journalFull = repairJournalFull(
+      work,
+      rawJournalFull ? cleanMarkup(rawJournalFull) : undefined,
+      journalShort
+    );
 
     const pages: string | undefined = work.page ?? work["article-number"];
 
