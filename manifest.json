@@ -1,11 +1,10 @@
 {
-	"id": "obsidian-bibliography-manager",
-	"name": "Obsidian Bibliography Manager",
-	"version": "0.1.1",
-	"minAppVersion": "0.15.0",
-	"description": "This is a fully Obsidian-based bibliography manager.",
-	"author": "Alberto Mercurio and Lorenzo Fioroni",
-	"authorUrl": "https://github.com/albertomercurio/Obsidian-Bibliography-Template",
-	"fundingUrl": "https://github.com/albertomercurio/Obsidian-Bibliography-Template",
-	"isDesktopOnly": false
+  "id": "research-importer",
+  "name": "Research Literature Manager",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Import papers from DOI or arXiv ID with full author, journal, and BibTeX management.",
+  "author": "Alberto Mercurio",
+  "authorUrl": "",
+  "isDesktopOnly": false
 }
