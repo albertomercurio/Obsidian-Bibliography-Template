@@ -1,17 +1,11 @@
 import { App, TFile } from "obsidian";
 import type { PersonMatchResult, JournalMatchResult } from "./types";
+import { initialOf, normName } from "./nameUtils";
+import { normOrcid } from "./AuthorMerge";
 
 // ---------------------------------------------------------------------------
 // Normalisation helpers
 // ---------------------------------------------------------------------------
-
-function normName(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // strip diacritics
-    .toLowerCase()
-    .trim();
-}
 
 function normJournal(s: string): string {
   return s
@@ -21,11 +15,6 @@ function normJournal(s: string): string {
     .replace(/[.\-_]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/** "Alberto" → "a"  |  "A." → "a" */
-function initialOf(given: string): string {
-  return given.replace(/\.$/, "").charAt(0).toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +91,7 @@ export class VaultIndex {
       const orcid: string | undefined = fm["ORCiD"] ?? undefined;
 
       if (orcid) {
-        keys.orcid = orcid.trim();
+        keys.orcid = normOrcid(orcid);
         this.orcidIndex.set(keys.orcid, file);
       }
 
@@ -186,42 +175,52 @@ export class VaultIndex {
   // Person lookup
   // --------------------------------------------------------------------------
 
+  /**
+   * True when both sides carry an ORCID and they differ — confirmed different
+   * people, so the candidate must not be offered as a match.
+   */
+  private orcidRulesOut(candidate: TFile, incomingOrcid: string): boolean {
+    if (!incomingOrcid) return false;
+    const candidateOrcid = this.fileKeysIndex.get(candidate.path)?.orcid;
+    return Boolean(candidateOrcid) && candidateOrcid !== incomingOrcid;
+  }
+
   findPerson(
     given: string,
     family: string,
     orcid?: string
   ): PersonMatchResult {
+    const incomingOrcid = orcid ? normOrcid(orcid) : "";
+
     // 1. ORCID exact match (most reliable)
-    if (orcid) {
-      const file = this.orcidIndex.get(orcid.trim());
+    if (incomingOrcid) {
+      const file = this.orcidIndex.get(incomingOrcid);
       if (file) return { kind: "exact", file, reason: "ORCID match" };
     }
 
     // 2. Full name match — only safe to trust without dialog when ORCID confirms identity.
     const fullKey = normName(`${given} ${family}`);
     const byFull = this.fullNameIndex.get(fullKey);
-    if (byFull) {
-      const candidateOrcid = this.fileKeysIndex.get(byFull.path)?.orcid;
-      // Both sides have an ORCID but they differ → confirmed different people; create a new note.
-      if (orcid && candidateOrcid && orcid.trim() !== candidateOrcid) {
-        return { kind: "none" };
-      }
-      // Otherwise at least one ORCID is unknown; can't auto-confirm identity.
+    if (byFull && !this.orcidRulesOut(byFull, incomingOrcid)) {
+      // At least one ORCID is unknown; can't auto-confirm identity.
       return { kind: "partial", file: byFull, reason: "full name match – ORCID unconfirmed" };
     }
 
-    // 3. Abbreviated given name in incoming data → check against full names in vault
-    //    e.g. incoming "A. Mercurio", vault has "Alberto Mercurio"
+    // 3. Abbreviated given name on either side → compare initial + family.
+    //    e.g. incoming "A. Mercurio", vault has "Alberto Mercurio" (or the reverse).
     const initKey = `${initialOf(given)} ${normName(family)}`;
-    const byInitial = this.initialIndex.get(initKey);
-    if (byInitial && byInitial.length === 1) {
+    // Candidates whose ORCID confirms they are somebody else are not candidates.
+    const byInitial = (this.initialIndex.get(initKey) ?? []).filter(
+      (f) => !this.orcidRulesOut(f, incomingOrcid)
+    );
+    if (byInitial.length === 1) {
       return {
         kind: "partial",
         file: byInitial[0],
         reason: `abbreviated first name matches "${byInitial[0].basename}"`,
       };
     }
-    if (byInitial && byInitial.length > 1) {
+    if (byInitial.length > 1) {
       // Multiple candidates — return the first as a hint, disambiguate in UI
       return {
         kind: "partial",
@@ -230,12 +229,9 @@ export class VaultIndex {
       };
     }
 
-    // 4. Incoming full name might match a vault abbreviated name:
-    //    incoming "Alberto Mercurio", vault has "A. Mercurio"
-    //    Re-check by looking up the initial of the incoming given name
-    //    against the full name index.
-    // (Already covered above; if vault file has "A." as first_name it won't
-    //  appear in fullNameIndex as "alberto mercurio". We flag partial instead.)
+    // The reverse case — incoming "Alberto Mercurio" against a vault "A. Mercurio" —
+    // needs no extra tier: the vault file is indexed under initKey "a mercurio",
+    // which step 3 looks up from the incoming initial.
 
     return { kind: "none" };
   }

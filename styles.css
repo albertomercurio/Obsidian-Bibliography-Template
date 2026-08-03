@@ -42,3 +42,78 @@
   color: var(--text-muted);
   margin: 0;
 }
+
+/* --- Merge preview ------------------------------------------------------ */
+
+/* Keeps the action buttons on screen however tall the preview gets. */
+.ri-scroll {
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.ri-merge {
+  background: var(--background-secondary);
+  border-radius: 6px;
+  padding: 0.25em 1em 0.75em;
+  margin-bottom: 1em;
+}
+
+.ri-merge h3 {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ri-merge .setting-item.ri-merge-field {
+  border-top: none;
+  padding: 0.4em 0;
+}
+
+.ri-merge .ri-conflict .setting-item-description {
+  color: var(--text-warning);
+}
+
+.ri-merge-result {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+
+/* Long names and ORCIDs wrap instead of widening the modal. */
+.research-importer-modal .ri-name,
+.research-importer-modal .ri-detail,
+.research-importer-modal .ri-merge-result {
+  overflow-wrap: anywhere;
+}
+
+/* --- Narrow screens (phones) -------------------------------------------- */
+
+@media (max-width: 500px) {
+  .research-importer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stack label above control so neither gets squeezed. */
+  .research-importer-modal .setting-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5em;
+  }
+
+  .research-importer-modal .setting-item-control {
+    width: 100%;
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+
+  .research-importer-modal .setting-item-control select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Full-width stacked buttons beat truncated labels. */
+  .research-importer-modal .ri-actions .setting-item-control button {
+    width: 100%;
+  }
+}

@@ -1,7 +1,8 @@
-import { App, normalizePath, TFile } from "obsidian";
+import { App, Notice, normalizePath, TFile } from "obsidian";
 import type { PaperMetadata } from "./types";
 import type { PluginSettings } from "./types";
 import { VaultIndex } from "./VaultIndex";
+import { mergedFields, valueOf, type MergeField } from "./AuthorMerge";
 
 // ---------------------------------------------------------------------------
 // Filename sanitisation
@@ -95,14 +96,29 @@ export class NoteCreator {
     };
   }
 
-  planMergePerson(
-    file: TFile,
-    params: { given: string; family: string; orcid?: string }
-  ): PlannedNoteAction<string> {
+  planMergePerson(file: TFile, fields: MergeField[]): PlannedNoteAction<string> {
+    const merged = mergedFields(fields);
+    const target = this.personBasename(merged);
+    // The caller writes wikilinks from `basename` before commit() runs, so a
+    // rename that will be blocked must be predicted here, not discovered later.
+    const renamable = target && !this.personPathTaken(file, target);
     return {
-      basename: this.personBasename(params),
-      commit: () => this.mergePerson(file, params),
+      basename: renamable ? target : file.basename,
+      commit: () => this.mergePerson(file, fields),
     };
+  }
+
+  /** True when another file already occupies `basename` next to `file`. */
+  private personPathTaken(file: TFile, basename: string): boolean {
+    const occupant = this.app.vault.getAbstractFileByPath(
+      this.siblingPath(file, basename)
+    );
+    return Boolean(occupant) && occupant !== file;
+  }
+
+  private siblingPath(file: TFile, basename: string): string {
+    const dir = file.parent?.path ?? "";
+    return normalizePath(dir ? `${dir}/${basename}.md` : `${basename}.md`);
   }
 
   planCreateJournal(params: {
@@ -130,38 +146,55 @@ export class NoteCreator {
   // --------------------------------------------------------------------------
 
   /**
-   * Updates an existing Person note with richer incoming data (full name,
-   * ORCID) and renames the file when the canonical display name changes.
-   * Obsidian's rename API automatically updates all wikilinks in the vault.
-   * Returns the (possibly new) file basename.
+   * Writes the resolved value of each field onto an existing Person note,
+   * touching only the keys that actually change so the note body and any
+   * user-added frontmatter are left alone. Refreshes the index.
    */
-  async mergePerson(
-    file: TFile,
-    params: { given: string; family: string; orcid?: string }
-  ): Promise<string> {
-    const { given, family, orcid } = params;
+  async applyPersonFields(file: TFile, fields: MergeField[]): Promise<void> {
+    const changes = fields.filter((f) => !f.identical);
+    if (changes.length === 0) return;
 
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm["first_name"] = given;
-      fm["last_name"] = family;
-      if (orcid) fm["ORCiD"] = orcid;
-    });
-
-    const newBasename = sanitizeFilename(`${given} ${family}`.trim(), 100);
-    if (newBasename !== file.basename) {
-      const dir = file.parent?.path ?? "";
-      const newPath = normalizePath(
-        dir ? `${dir}/${newBasename}.md` : `${newBasename}.md`
-      );
-      await this.app.fileManager.renameFile(file, newPath);
-      const renamed = this.app.vault.getAbstractFileByPath(newPath);
-      if (renamed instanceof TFile) {
-        this.index.indexFile(renamed);
-        return renamed.basename;
+      for (const field of changes) {
+        const value = valueOf(field);
+        if (value !== (fm[field.key] ?? "")) fm[field.key] = value;
       }
+    });
+    this.index.indexFile(file);
+  }
+
+  /**
+   * Applies a merge plan to an existing Person note and renames the file when
+   * the resolved display name differs from the current one. Obsidian's rename
+   * API automatically updates all wikilinks in the vault.
+   * Returns the (possibly new) file basename.
+   */
+  async mergePerson(file: TFile, fields: MergeField[]): Promise<string> {
+    await this.applyPersonFields(file, fields);
+
+    const newBasename = this.personBasename(mergedFields(fields));
+    if (!newBasename || newBasename === file.basename) {
+      return file.basename;
     }
 
-    this.index.indexFile(file);
+    // Another Person note already sits at the target name. Renaming would
+    // throw, so keep the frontmatter update and leave the filename alone.
+    if (this.personPathTaken(file, newBasename)) {
+      new Notice(
+        `Updated "${file.basename}" but kept its filename — "${newBasename}" already exists.`,
+        7000
+      );
+      return file.basename;
+    }
+
+    const newPath = this.siblingPath(file, newBasename);
+    await this.app.fileManager.renameFile(file, newPath);
+    const renamed = this.app.vault.getAbstractFileByPath(newPath);
+    if (renamed instanceof TFile) {
+      this.index.indexFile(renamed);
+      return renamed.basename;
+    }
+
     return file.basename;
   }
 

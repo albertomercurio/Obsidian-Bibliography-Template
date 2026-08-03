@@ -9,6 +9,7 @@ import { VaultIndex, normDoi } from "./VaultIndex";
 import { NoteCreator } from "./NoteCreator";
 import { DisambiguationModal } from "./DisambiguationModal";
 import { AuthorOverflowModal } from "./AuthorOverflowModal";
+import { additiveFields, planAuthorMerge, type MergeField } from "./AuthorMerge";
 
 type DeferredImportAction = () => Promise<void>;
 
@@ -299,21 +300,12 @@ export class ImportService {
     const match = this.index.findPerson(given, family, orcid);
 
     if (match.kind === "exact" && match.file) {
-      return {
-        displayName: match.file.basename,
-        actions: orcid
-          ? [async () => {
-              await this.setOrcidIfMissing(match.file!, orcid);
-            }]
-          : [],
-      };
+      return this.reuseExisting(match.file, author);
     }
 
     if (match.kind === "partial" && match.file) {
-      const candidateFm =
-        this.app.metadataCache.getFileCache(match.file)?.frontmatter;
-      const candidateGiven = candidateFm?.["first_name"] ?? "";
-      const candidateFamily = candidateFm?.["last_name"] ?? "";
+      const candidate = this.personFields(match.file);
+      const plan = planAuthorMerge(candidate, author);
 
       const modal = new DisambiguationModal(this.app, {
         entityType: "author",
@@ -322,34 +314,25 @@ export class ImportService {
           details: orcid ? `ORCID: ${orcid}` : undefined,
         },
         candidate: {
-          label: `${candidateGiven} ${candidateFamily}`.trim(),
-          details: candidateFm?.["ORCiD"]
-            ? `ORCID: ${candidateFm["ORCiD"]}`
-            : match.reason,
+          label: `${candidate.given} ${candidate.family}`.trim(),
+          details: candidate.orcid ? `ORCID: ${candidate.orcid}` : match.reason,
         },
-        allowMerge: true,
+        mergePlan: plan,
+        candidateBasename: match.file.basename,
       });
-      const choice = await modal.ask();
+      const { choice, mergeFields } = await modal.ask();
 
       if (choice === "abort") {
         return null;
       }
       if (choice === "same") {
-        return {
-          displayName: match.file.basename,
-          actions: orcid
-            ? [async () => {
-                await this.setOrcidIfMissing(match.file!, orcid);
-              }]
-            : [],
-        };
+        return this.reuseExisting(match.file, author);
       }
       if (choice === "merge") {
-        const plannedMerge = this.creator.planMergePerson(match.file, {
-          given,
-          family,
-          orcid,
-        });
+        const plannedMerge = this.creator.planMergePerson(
+          match.file,
+          mergeFields ?? plan
+        );
         return {
           displayName: plannedMerge.basename,
           actions: [async () => {
@@ -437,7 +420,7 @@ export class ImportService {
           .join(" · "),
       },
     });
-    const choice = await modal.ask();
+    const { choice } = await modal.ask();
     if (choice === "abort") {
       return null;
     }
@@ -483,13 +466,39 @@ export class ImportService {
   // Helpers
   // --------------------------------------------------------------------------
 
-  private async setOrcidIfMissing(file: TFile, orcid: string): Promise<void> {
+  /** Reads the Person frontmatter this plugin manages off an existing note. */
+  private personFields(file: TFile): {
+    given: string;
+    family: string;
+    orcid: string;
+  } {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    if (fm?.["ORCiD"]) return; // already has one
+    return {
+      given: fm?.["first_name"] ?? "",
+      family: fm?.["last_name"] ?? "",
+      orcid: fm?.["ORCiD"] ?? "",
+    };
+  }
 
-    await this.app.fileManager.processFrontMatter(file, (fmObj) => {
-      fmObj["ORCiD"] = orcid;
-    });
-    this.index.indexFile(file); // refresh index
+  /**
+   * Links to an existing Person note, filling in only the fields that note
+   * leaves empty (typically a missing ORCID). Never replaces existing values —
+   * that is what the explicit "merge" choice is for.
+   */
+  private reuseExisting(
+    file: TFile,
+    author: AuthorRaw
+  ): PlannedEntityResolution {
+    return {
+      displayName: file.basename,
+      actions: [async () => {
+        // Re-read at commit time: an earlier author in the same import may
+        // already have touched this note.
+        const fields: MergeField[] = additiveFields(
+          planAuthorMerge(this.personFields(file), author)
+        );
+        await this.creator.applyPersonFields(file, fields);
+      }],
+    };
   }
 }
