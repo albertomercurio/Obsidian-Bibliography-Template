@@ -304,9 +304,14 @@ export class NoteCreator {
       // Match the Abstract heading, consume its trailing newline and ALL
       // subsequent blank lines from the template, then insert exactly one
       // blank line before the abstract text.
+      // A replacer function is used (not a replacement string) so that `$`
+      // sequences in the abstract's LaTeX (e.g. `$1.0 \times 10^{-21}$`,
+      // `$$...$$`) are inserted literally instead of being interpreted as
+      // `$1`, `$2`, `$$`, `$&` replacement patterns.
+      const abstract = metadata.abstract;
       content = content.replace(
         /^(#{1,6}\s+Abstract)\s*\n(\s*\n)*/im,
-        `$1\n\n${metadata.abstract}\n\n`
+        (_match, heading: string) => `${heading}\n\n${abstract}\n\n`
       );
     }
 
