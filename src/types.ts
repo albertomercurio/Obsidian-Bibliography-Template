@@ -1,10 +1,8 @@
 // Shared types for the Research Literature Manager plugin
 
-import type { ProfileId } from "./schema";
+import { DEFAULT_FOLDERS } from "./schema";
 
 export interface PluginSettings {
-  /** Property names and note layout of the target vault (see src/schema.ts). */
-  schemaProfile: ProfileId;
   articlesFolder: string;
   booksFolder: string;
   peopleFolder: string;
@@ -14,11 +12,10 @@ export interface PluginSettings {
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-  schemaProfile: "legacy",
-  articlesFolder: "Articles",
-  booksFolder: "Books",
-  peopleFolder: "People",
-  journalsFolder: "Journals",
+  articlesFolder: DEFAULT_FOLDERS.articles,
+  booksFolder: DEFAULT_FOLDERS.books,
+  peopleFolder: DEFAULT_FOLDERS.people,
+  journalsFolder: DEFAULT_FOLDERS.journals,
   skipOrcidSearch: false,
   maxAuthors: 25,
 };

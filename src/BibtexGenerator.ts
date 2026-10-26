@@ -62,10 +62,6 @@ export interface BibtexOptions {
   metadata: PaperMetadata;
   /** The wikilink display name of the journal, used for the abbreviated field */
   journalAbbrev?: string;
-  /** Omit `url` when a DOI is present (the DOI already resolves). */
-  omitUrlWithDoi?: boolean;
-  /** Add eprint/archivePrefix to published articles that also have an arXiv id. */
-  eprintForArticles?: boolean;
   /** Ready-made author field, used verbatim (e.g. a full list kept when only some authors are linked). */
   authorField?: string;
 }
@@ -117,8 +113,9 @@ export function generateBibtex(opts: BibtexOptions): string {
     if (metadata.issue) fields.push(["number", metadata.issue]);
     if (metadata.pages) fields.push(["pages", metadata.pages]);
     if (metadata.doi) fields.push(["doi", metadata.doi]);
-    if (metadata.url && !(opts.omitUrlWithDoi && metadata.doi)) fields.push(["url", metadata.url]);
-    if (opts.eprintForArticles && metadata.arxivId) {
+    // No url when a DOI resolves; eprint keeps the arXiv version citable.
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
+    if (metadata.arxivId) {
       fields.push(["eprint", metadata.arxivId]);
       fields.push(["archivePrefix", "arXiv"]);
     }
@@ -128,8 +125,8 @@ export function generateBibtex(opts: BibtexOptions): string {
     if (metadata.publisher) fields.push(["publisher", toLatex(metadata.publisher)]);
     fields.push(["year", year]);
     if (metadata.isbn) fields.push(["isbn", metadata.isbn]);
-    if (metadata.doi && opts.omitUrlWithDoi) fields.push(["doi", metadata.doi]);
-    if (metadata.url && !(opts.omitUrlWithDoi && metadata.doi)) fields.push(["url", metadata.url]);
+    if (metadata.doi) fields.push(["doi", metadata.doi]);
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
   } else {
     // preprint / misc
     if (authorField) fields.push(["author", authorField]);
@@ -141,7 +138,7 @@ export function generateBibtex(opts: BibtexOptions): string {
       fields.push(["primaryClass", ""]); // caller can update
     }
     if (metadata.doi) fields.push(["doi", metadata.doi]);
-    if (metadata.url && !(opts.omitUrlWithDoi && metadata.doi)) fields.push(["url", metadata.url]);
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
     fields.push(["note", "Preprint"]);
   }
 

@@ -2,7 +2,7 @@ import { App, TFile } from "obsidian";
 import type { PersonMatchResult, JournalMatchResult } from "./types";
 import { initialOf, normName } from "./nameUtils";
 import { normOrcid } from "./AuthorMerge";
-import type { SchemaProfile } from "./schema";
+import { PROP, TYPES } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Normalisation helpers
@@ -34,8 +34,6 @@ interface FileKeys {
 
 export class VaultIndex {
   private app: App;
-  /** Read on every call, so a profile change in the settings applies at once. */
-  private profile: () => SchemaProfile;
 
   /** ORCID → file */
   private orcidIndex = new Map<string, TFile>();
@@ -58,9 +56,8 @@ export class VaultIndex {
    */
   private fileKeysIndex = new Map<string, FileKeys>();
 
-  constructor(app: App, profile: () => SchemaProfile) {
+  constructor(app: App) {
     this.app = app;
-    this.profile = profile;
   }
 
   build(): void {
@@ -86,14 +83,13 @@ export class VaultIndex {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache?.frontmatter) return;
     const fm = cache.frontmatter;
-    const { keys: k, types } = this.profile();
-    const type: string = fm[k.type] ?? "";
+    const type: string = fm[PROP.type] ?? "";
     const keys: FileKeys = {};
 
-    if (type === types.person) {
-      const given: string = fm[k.firstName] ?? "";
-      const family: string = fm[k.lastName] ?? "";
-      const orcid: string | undefined = fm[k.orcid] ?? undefined;
+    if (type === TYPES.person) {
+      const given: string = fm[PROP.firstName] ?? "";
+      const family: string = fm[PROP.lastName] ?? "";
+      const orcid: string | undefined = fm[PROP.orcid] ?? undefined;
 
       if (orcid) {
         keys.orcid = normOrcid(orcid);
@@ -111,9 +107,9 @@ export class VaultIndex {
       }
     }
 
-    if (type === types.article || type === types.book) {
-      const doi: string | undefined = fm[k.doi];
-      const arxiv: string | undefined = fm[k.arxiv] != null ? String(fm[k.arxiv]) : undefined;
+    if (type === TYPES.article || type === TYPES.book) {
+      const doi: string | undefined = fm[PROP.doi];
+      const arxiv: string | undefined = fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : undefined;
       if (doi) {
         keys.doi = normDoi(doi);
         this.doiIndex.set(keys.doi, file);
@@ -124,17 +120,16 @@ export class VaultIndex {
       }
     }
 
-    if (type === types.journal) {
-      const fullName: string = (k.journalFullName && fm[k.journalFullName]) || file.basename;
-      keys.journalKeys = [normJournal(fullName)];
+    if (type === TYPES.journal) {
+      keys.journalKeys = [normJournal(file.basename)];
       this.journalIndex.set(keys.journalKeys[0], file);
-      const abbreviation: unknown = k.journalAbbreviation ? fm[k.journalAbbreviation] : undefined;
+      const abbreviation: unknown = fm[PROP.abbreviation];
       if (typeof abbreviation === "string" && abbreviation.trim()) {
         keys.journalKeys.push(normJournal(abbreviation));
         this.journalIndex.set(normJournal(abbreviation), file);
       }
 
-      const aliases: unknown = fm[k.aliases] ?? fm["aliases"];
+      const aliases: unknown = fm[PROP.aliases] ?? fm["aliases"];
       const aliasList: string[] = Array.isArray(aliases)
         ? aliases.map(String)
         : typeof aliases === "string"

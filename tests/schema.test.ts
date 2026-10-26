@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  abstractCallout, bibtexFromBody, bibtexSection, profileFor, provenanceOf, setSection, SECOND_BRAIN_PROFILE,
+  abstractCallout, BODIES, bibtexFromBody, bibtexSection, provenanceOf, replaceBibtexBlock, setSection,
 } from "../src/schema";
 import { planAuthorMerge, mergedFields } from "../src/AuthorMerge";
 
 const prov = { source: "Crossref", ident: "DOI 10.1/x", date: "2026-10-26" };
 
 test("setSection fills an empty section and keeps LaTeX dollars literal", () => {
-  const body = SECOND_BRAIN_PROFILE.bodies!.article;
+  const body = BODIES.article;
   const out = setSection(body, "Abstract", abstractCallout("Energy $E = mc^2$ and $$x$$.", prov));
   assert.match(out, /## Abstract\n\n> \[!quote\] Crossref · retrieved 2026-10-26\n> Energy \$E = mc\^2\$ and \$\$x\$\$\.\n\n## My Notes/);
 });
@@ -34,10 +34,12 @@ test("provenance: journal DOIs come from Crossref, arXiv DOIs from arXiv", () =>
     { source: "arXiv", ident: "arXiv 2207.09470", date: "d" });
 });
 
-test("profiles: legacy is the default; Second Brain uses Title Case properties", () => {
-  assert.equal(profileFor(undefined).id, "legacy");
-  assert.equal(profileFor("second-brain").keys.firstName, "First Name");
-  assert.equal(profileFor("second-brain").bibtexProperty, null);
+test("regenerating keeps the source line and replaces only the entry", () => {
+  const body = `## BibTeX\n\n${bibtexSection("@article{K,\n  year = 2020,\n}", prov)}\n`;
+  const out = replaceBibtexBlock(body, "@article{K,\n  year = 2021,\n}");
+  assert.match(out, /Source: Crossref · DOI 10\.1\/x · retrieved 2026-10-26/);
+  assert.match(out, /year = 2021/);
+  assert.doesNotMatch(out, /year = 2020/);
 });
 
 test("author merge works on logical fields, independent of property names", () => {

@@ -10,7 +10,7 @@ import { hasDiacritics, isAbbreviationOf, normName } from "./nameUtils";
 
 export type FieldSource = "vault" | "incoming";
 
-/** Logical person fields; the active schema profile maps them to property names. */
+/** Logical person fields; NoteCreator maps them to property names (src/schema.ts). */
 export type PersonFieldKey = "given" | "family" | "orcid";
 
 export interface MergeField {

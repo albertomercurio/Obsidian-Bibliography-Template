@@ -10,7 +10,7 @@ import { NoteCreator } from "./NoteCreator";
 import { DisambiguationModal } from "./DisambiguationModal";
 import { AuthorOverflowModal } from "./AuthorOverflowModal";
 import { additiveFields, planAuthorMerge, type MergeField } from "./AuthorMerge";
-import { bibtexStyle, profileFor, provenanceOf, type Provenance } from "./schema";
+import { PROP, provenanceOf, TYPES, type Provenance } from "./schema";
 
 type DeferredImportAction = () => Promise<void>;
 
@@ -160,7 +160,6 @@ export class ImportService {
     const bibtex = generateBibtex({
       metadata,
       journalAbbrev: metadata.journalShort,
-      ...bibtexStyle(profileFor(this.settings.schemaProfile)),
     });
 
     // ---- 6. Create note ----------------------------------------------------
@@ -205,16 +204,14 @@ export class ImportService {
   // --------------------------------------------------------------------------
 
   async refreshActiveNote(file: TFile): Promise<void> {
-    const profile = profileFor(this.settings.schemaProfile);
-    const k = profile.keys;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    const arxivId: string | undefined = fm?.[k.arxiv]
-      ? String(fm[k.arxiv]).trim()
+    const arxivId: string | undefined = fm?.[PROP.arxiv]
+      ? String(fm[PROP.arxiv]).trim()
       : undefined;
 
-    if (fm?.[k.type] !== profile.types.article || !arxivId) {
+    if (fm?.[PROP.type] !== TYPES.article || !arxivId) {
       new Notice(
-        "Refresh only works on arXiv-sourced article notes (need an arxiv_id).",
+        "Refresh only works on article notes with an arXiv id.",
         6000
       );
       return;
@@ -235,7 +232,7 @@ export class ImportService {
     // A real journal DOI from the fetch means it has now been published.
     const fetchedJournalDoi =
       !!metadata.doi && !/^10\.48550\/arxiv/i.test(metadata.doi);
-    const currentDoi = fm[k.doi] ? String(fm[k.doi]) : "";
+    const currentDoi = fm[PROP.doi] ? String(fm[PROP.doi]) : "";
     const alreadyPublished =
       !!currentDoi && !/^10\.48550\/arxiv/i.test(currentDoi);
     if (!fetchedJournalDoi || !metadata.journalFull || alreadyPublished) {
@@ -257,16 +254,14 @@ export class ImportService {
     const bibtex = generateBibtex({
       metadata,
       journalAbbrev: metadata.journalShort,
-      ...bibtexStyle(profile),
     });
 
     // ---- Write back --------------------------------------------------------
     await this.app.fileManager.processFrontMatter(file, (fmObj) => {
-      fmObj[k.doi] = metadata.doi ?? null;
-      fmObj[k.journal] = `[[${resolvedJournal.displayName}]]`;
-      fmObj[k.year] = metadata.year > 0 ? metadata.year : fmObj[k.year] ?? null;
-      if (profile.urlOnlyWithoutDoi && metadata.doi) delete fmObj[k.url];
-      else fmObj[k.url] = metadata.url ?? fmObj[k.url] ?? null;
+      fmObj[PROP.doi] = metadata.doi ?? null;
+      fmObj[PROP.journal] = `[[${resolvedJournal.displayName}]]`;
+      fmObj[PROP.year] = metadata.year > 0 ? metadata.year : fmObj[PROP.year] ?? null;
+      if (metadata.doi) delete fmObj[PROP.url]; // the DOI resolves; a URL would be redundant
     });
     await this.creator.writeBibtex(file, bibtex, provenanceOf(metadata));
     this.index.indexFile(file);
@@ -485,11 +480,10 @@ export class ImportService {
     orcid: string;
   } {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    const k = profileFor(this.settings.schemaProfile).keys;
     return {
-      given: fm?.[k.firstName] ?? "",
-      family: fm?.[k.lastName] ?? "",
-      orcid: fm?.[k.orcid] ?? "",
+      given: fm?.[PROP.firstName] ?? "",
+      family: fm?.[PROP.lastName] ?? "",
+      orcid: fm?.[PROP.orcid] ?? "",
     };
   }
 

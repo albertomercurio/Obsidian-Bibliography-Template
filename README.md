@@ -11,28 +11,20 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 - **Deduplication**: checks DOI and arXiv ID against the vault before creating anything; prompts you when an author or journal might already exist.
 - **ORCID enrichment**: uses the [ORCID public API](https://pub.orcid.org) to find and attach ORCIDs to authors.
 - **Large-collaboration safeguard**: if a paper exceeds the configured author limit, the plugin warns before import and, if you continue, keeps only the first author in Obsidian while preserving the full BibTeX author list.
-- **Obsidian Bases ready**: Article, Book, Journal notes use typed frontmatter properties compatible with `Articles.base`, `Books.base`, `Journals.base`.
+- **Obsidian Bases ready**: notes use typed frontmatter properties that the vault's `Articles.base`, `People.base` and `Journals.base` views read.
 - **Retroactive BibTeX**: a command to re-generate the BibTeX entry of all existing Article and Book notes if you change the format. Volume, issue, pages and the full author list of large collaborations are kept from the existing entry; family names come from the Person notes.
-- **Schema profiles**: the same importer writes into vaults with different property names (see below).
 
 ---
 
-## Schema profiles
+## Note format
 
-Settings → Research Literature Manager → **Note schema** selects how notes are written. Switching profile also moves the folder settings to the new defaults, unless you had changed them.
+The plugin writes the note layout of the Second Brain vault (property names and bodies are defined in `src/schema.ts`):
 
-| | Legacy (default) | Second Brain 0.3 |
-| --- | --- | --- |
-| Properties | `type`, `title`, `authors`, `arxiv_id`, `first_name`, `ORCiD`, … | `Type`, `Title`, `Authors`, `arXiv`, `First Name`, `ORCID`, … |
-| BibTeX | `bibtex` frontmatter property | `## BibTeX` section of the note, below a `> [!info] Source: Crossref · DOI … · retrieved YYYY-MM-DD` line |
-| Abstract | Inserted under the template's `## Abstract` heading | `> [!quote]` callout under `## Abstract` |
-| New authors | `first_name`, `last_name`, `ORCiD` | Same in Title Case, plus `Relationship: [Author]` and a `## Sources` line |
-| Journals | `full_name`, abbreviation in `aliases` | `Abbreviation` property (used in BibTeX) |
-| BibTeX style | `url` always, `eprint` only for preprints | No `url` when a DOI exists; `eprint` also for published articles with an arXiv id |
-| Note bodies | Read from the vault's `* Template` notes | Built in, matching the Second Brain schema |
-| Folders | `Articles`, `Books`, `People`, `Journals` | `library/articles`, `library/books`, `notes/people`, `library/journals` |
+- **Article / Book** (`library/articles/Surname - YEAR - Title.md`): `Type`, `Title`, `Authors`, `Journal`, `Year`, `DOI`, `arXiv`, `PDF`, `Read`, `Topics`; `URL` only when there is no DOI. The abstract goes in a `> [!quote]` callout; the BibTeX entry goes in the `## BibTeX` section, below a `> [!info] Source: Crossref · DOI … · retrieved YYYY-MM-DD` line that marks it as checked against the source.
+- **Person** (`notes/people/First Last.md`): `First Name`, `Last Name`, `ORCID`, `Email`, `Affiliations`, `Relationship: [Author]` (an author is not automatically a collaborator), plus a `## Sources` line saying which record created it.
+- **Journal** (`library/journals/Full Name.md`): `Abbreviation`, used in the BibTeX `journal` field.
 
-Profiles live in `src/schema.ts`. Citation keys (`Macri2022SpontaneousScatteringRaman`) are the same in both, so existing citations keep working.
+Citation keys follow `SurnameYEARFirstWords` (`Macri2022SpontaneousScatteringRaman`), unchanged from earlier versions.
 
 ## Repository structure
 
@@ -41,7 +33,7 @@ Profiles live in `src/schema.ts`. Citation keys (`Macri2022SpontaneousScattering
 ├── main.ts                   # Plugin entry point (Obsidian convention: always at root)
 ├── src/
 │   ├── types.ts              # Shared TypeScript interfaces (PaperMetadata, PluginSettings, …)
-│   ├── schema.ts             # Schema profiles and note-body helpers (no Obsidian imports)
+│   ├── schema.ts             # Property names, note bodies, BibTeX/abstract sections (no Obsidian imports)
 │   ├── settings.ts           # Settings tab UI
 │   ├── CrossrefService.ts    # Fetch metadata by DOI via Crossref API
 │   ├── ArxivService.ts       # Fetch metadata by arXiv ID (Semantic Scholar + arXiv fallback)
@@ -65,24 +57,11 @@ Profiles live in `src/schema.ts`. Citation keys (`Macri2022SpontaneousScattering
 
 ## One-time vault setup
 
-After enabling the plugin in Obsidian, do this once:
+1. **Enable the plugin**: Settings → Community Plugins → *Research Literature Manager* → toggle on.
+2. **Check the folders** (Settings → Research Literature Manager): defaults are `library/articles`, `library/books`, `notes/people`, `library/journals`.
+3. **Review the author limit**: by default, imports with more than `25` authors ask for confirmation. If you continue, only the first author is linked in Obsidian metadata, while BibTeX keeps the full author list.
 
-1. **Enable the plugin**: Settings → Community Plugins → find *Research Literature Manager* → toggle on.
-2. **Configure Templater folder templates** (Settings → Templater → Folder Templates):
-
-   | Folder | Template |
-   |--------|----------|
-   | `Articles/` | `Article Template` |
-   | `Books/` | `Book Template` |
-   | `People/` | `Person Template` |
-   | `Journals/` | `Journal Template` |
-
-   This ensures that if you click an unresolved wikilink and create a note manually, it lands in the right folder with the right layout.
-
-3. **Check plugin settings** (Settings → Research Literature Manager): folder paths default to `Articles`, `Books`, `People`, `Journals` — adjust if your vault uses different names.
-4. **Review the author limit**: by default, imports with more than `25` authors ask for confirmation. If you continue, only the first author is linked in Obsidian metadata, while BibTeX still keeps the full author list.
-
----
+Note bodies are built into the plugin, so no template notes are needed.
 
 ## Usage
 
@@ -104,7 +83,7 @@ The plugin will:
 ### Re-generate BibTeX
 
 Command palette → **"Re-generate BibTeX for all articles and books"**.  
-Useful if you change the cite-key format or LaTeX encoding in `BibtexGenerator.ts`. Only the `bibtex` frontmatter field is updated; everything else is preserved.
+Useful if you change the cite-key format or LaTeX encoding in `BibtexGenerator.ts`. Only the BibTeX entry in the `## BibTeX` section is updated (volume, pages and the full author list are kept); the source line and everything else are preserved.
 
 ---
 
@@ -195,55 +174,3 @@ The compiled `main.js` is in `.gitignore` — only source files are tracked.
 | ORCID (record) | `https://pub.orcid.org/v3.0/{orcid}/person` | None (public records only) |
 
 ---
-
-## Note format
-
-### Article (`Articles/Surname - YEAR - Title.md`)
-
-```yaml
----
-type: Article
-doi: "10.xxxx/…"
-arxiv_id: "2301.xxxxx"
-title: "Full paper title"
-authors:
-  - "[[First Last]]"
-  - "[[First Last]]"
-journal: "[[Physical Review Letters]]"
-year: 2024
-url: "https://…"
-pdf:
-read: false
-bibtex: "@article{Surname2024Word,\n  …\n}"
-tags:
----
-```
-
-### Journal (`Journals/Full Name.md`)
-
-```yaml
----
-type: Journal
-full_name: "Physical Review Letters"
-aliases:
-  - "Phys. Rev. Lett."
-  - "PRL"
-tags:
----
-```
-
-The `aliases` field is native Obsidian — `[[Phys. Rev. Lett.]]` in any note automatically resolves to the Journal file.
-
-### Person (`People/First Last.md`)
-
-```yaml
----
-type: Person
-first_name: "Alberto"
-last_name: "Mercurio"
-ORCiD: "0000-0001-2345-6789"
-e-mail:
-cover_image:
-tags:
----
-```

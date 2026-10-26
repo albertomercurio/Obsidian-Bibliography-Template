@@ -6,7 +6,7 @@ import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ImportModal } from "./src/ImportModal";
 import { generateBibtex } from "./src/BibtexGenerator";
-import { bibtexFields, bibtexFromBody, bibtexStyle, profileFor, type SchemaProfile } from "./src/schema";
+import { bibtexFields, bibtexFromBody, PROP, TYPES } from "./src/schema";
 
 export default class ResearchImporterPlugin extends Plugin {
   settings!: PluginSettings;
@@ -18,7 +18,7 @@ export default class ResearchImporterPlugin extends Plugin {
     await this.loadSettings();
 
     // Build in-memory vault index
-    this.index = new VaultIndex(this.app, () => profileFor(this.settings.schemaProfile));
+    this.index = new VaultIndex(this.app);
     // Wait for metadata cache to be ready before indexing
     this.app.workspace.onLayoutReady(() => {
       this.index.build();
@@ -121,13 +121,11 @@ export default class ResearchImporterPlugin extends Plugin {
   // --------------------------------------------------------------------------
 
   private async regenerateAllBibtex(): Promise<void> {
-    const profile = profileFor(this.settings.schemaProfile);
-    const k = profile.keys;
     const files = this.app.vault
       .getMarkdownFiles()
       .filter((f) => {
         const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-        return fm?.[k.type] === profile.types.article || fm?.[k.type] === profile.types.book;
+        return fm?.[PROP.type] === TYPES.article || fm?.[PROP.type] === TYPES.book;
       });
 
     if (files.length === 0) {
@@ -145,34 +143,32 @@ export default class ResearchImporterPlugin extends Plugin {
 
         // Fields the frontmatter does not carry (volume, pages, …) come from the
         // existing entry, so regenerating never loses them.
-        const existing = profile.bibtexProperty
-          ? (fm[profile.bibtexProperty] as string | undefined)
-          : bibtexFromBody(await this.app.vault.cachedRead(file));
+        const existing = bibtexFromBody(await this.app.vault.cachedRead(file));
         const old = bibtexFields(existing);
         const metadata = {
           inputType: "doi" as const,
-          doi: fm[k.doi] ?? old.doi,
-          arxivId: fm[k.arxiv] != null ? String(fm[k.arxiv]) : old.eprint,
-          title: fm[k.title] ?? file.basename,
-          year: Number(fm[k.year]) || 0,
-          authors: authorsFromLinks(fm[k.authors], this.app, file.path, profile),
+          doi: fm[PROP.doi] ?? old.doi,
+          arxivId: fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : old.eprint,
+          title: fm[PROP.title] ?? file.basename,
+          year: Number(fm[PROP.year]) || 0,
+          authors: authorsFromLinks(fm[PROP.authors], this.app, file.path),
           journalFull: undefined,
           journalShort: undefined,
           volume: old.volume,
           issue: old.number,
           pages: old.pages,
           publisher: old.publisher,
-          isbn: fm[k.isbn] ?? old.isbn,
-          itemType: (fm[k.type] === profile.types.book ? "book" : "article") as "article" | "book",
+          isbn: fm[PROP.isbn] ?? old.isbn,
+          itemType: (fm[PROP.type] === TYPES.book ? "book" : "article") as "article" | "book",
         };
 
         // Journal abbreviation from the journal note linked in the frontmatter
-        const journalAbbrev = resolveJournalAbbrev(fm[k.journal], this.app, profile) ?? old.journal;
+        const journalAbbrev = resolveJournalAbbrev(fm[PROP.journal], this.app) ?? old.journal;
 
         // When only some authors are linked (large collaborations), keep the full list.
         const oldAuthors = old.author ? old.author.split(/\s+and\s+/).length : 0;
         const authorField = oldAuthors > metadata.authors.length ? old.author : undefined;
-        const newBibtex = generateBibtex({ metadata, journalAbbrev, authorField, ...bibtexStyle(profile) });
+        const newBibtex = generateBibtex({ metadata, journalAbbrev, authorField });
 
         // No provenance: nothing was re-fetched, so the source line stays as it is.
         await this.creator.writeBibtex(file, newBibtex, null);
@@ -198,16 +194,15 @@ export default class ResearchImporterPlugin extends Plugin {
 function authorsFromLinks(
   authors: unknown,
   app: App,
-  sourcePath: string,
-  profile: SchemaProfile
+  sourcePath: string
 ): { given: string; family: string }[] {
   if (!Array.isArray(authors)) return [];
   return authors.map((a) => {
     const name = String(a).replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
     const person = app.metadataCache.getFirstLinkpathDest(name, sourcePath);
     const fm = person ? app.metadataCache.getFileCache(person)?.frontmatter : undefined;
-    const given = fm?.[profile.keys.firstName];
-    const family = fm?.[profile.keys.lastName];
+    const given = fm?.[PROP.firstName];
+    const family = fm?.[PROP.lastName];
     if (typeof family === "string" && family.trim()) {
       return { given: typeof given === "string" ? given : "", family };
     }
@@ -218,8 +213,7 @@ function authorsFromLinks(
 
 function resolveJournalAbbrev(
   journalFm: string | undefined,
-  app: App,
-  profile: SchemaProfile
+  app: App
 ): string | undefined {
   if (!journalFm) return undefined;
   // Strip wikilink: "[[Physical Review Letters]]" → "Physical Review Letters"
@@ -231,13 +225,6 @@ function resolveJournalAbbrev(
   if (!journalFile) return linkName;
 
   const fm = app.metadataCache.getFileCache(journalFile)?.frontmatter;
-  const k = profile.keys;
-  if (k.journalAbbreviation && fm?.[k.journalAbbreviation]) {
-    return String(fm[k.journalAbbreviation]);
-  }
-  const aliases: unknown = fm?.[k.aliases] ?? fm?.["aliases"];
-  if (Array.isArray(aliases) && aliases.length > 0) {
-    return String(aliases[0]);
-  }
-  return (k.journalFullName && fm?.[k.journalFullName]) || linkName;
+  if (fm?.[PROP.abbreviation]) return String(fm[PROP.abbreviation]);
+  return linkName;
 }
