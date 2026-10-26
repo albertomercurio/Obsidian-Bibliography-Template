@@ -12,9 +12,27 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 - **ORCID enrichment**: uses the [ORCID public API](https://pub.orcid.org) to find and attach ORCIDs to authors.
 - **Large-collaboration safeguard**: if a paper exceeds the configured author limit, the plugin warns before import and, if you continue, keeps only the first author in Obsidian while preserving the full BibTeX author list.
 - **Obsidian Bases ready**: Article, Book, Journal notes use typed frontmatter properties compatible with `Articles.base`, `Books.base`, `Journals.base`.
-- **Retroactive BibTeX**: a command to re-generate the `bibtex` field across all existing Article and Book notes if you change the format.
+- **Retroactive BibTeX**: a command to re-generate the BibTeX entry of all existing Article and Book notes if you change the format. Volume, issue, pages and the full author list of large collaborations are kept from the existing entry; family names come from the Person notes.
+- **Schema profiles**: the same importer writes into vaults with different property names (see below).
 
 ---
+
+## Schema profiles
+
+Settings → Research Literature Manager → **Note schema** selects how notes are written. Switching profile also moves the folder settings to the new defaults, unless you had changed them.
+
+| | Legacy (default) | Second Brain 0.3 |
+| --- | --- | --- |
+| Properties | `type`, `title`, `authors`, `arxiv_id`, `first_name`, `ORCiD`, … | `Type`, `Title`, `Authors`, `arXiv`, `First Name`, `ORCID`, … |
+| BibTeX | `bibtex` frontmatter property | `## BibTeX` section of the note, below a `> [!info] Source: Crossref · DOI … · retrieved YYYY-MM-DD` line |
+| Abstract | Inserted under the template's `## Abstract` heading | `> [!quote]` callout under `## Abstract` |
+| New authors | `first_name`, `last_name`, `ORCiD` | Same in Title Case, plus `Relationship: [Author]` and a `## Sources` line |
+| Journals | `full_name`, abbreviation in `aliases` | `Abbreviation` property (used in BibTeX) |
+| BibTeX style | `url` always, `eprint` only for preprints | No `url` when a DOI exists; `eprint` also for published articles with an arXiv id |
+| Note bodies | Read from the vault's `* Template` notes | Built in, matching the Second Brain schema |
+| Folders | `Articles`, `Books`, `People`, `Journals` | `library/articles`, `library/books`, `notes/people`, `library/journals` |
+
+Profiles live in `src/schema.ts`. Citation keys (`Macri2022SpontaneousScatteringRaman`) are the same in both, so existing citations keep working.
 
 ## Repository structure
 
@@ -23,6 +41,7 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 ├── main.ts                   # Plugin entry point (Obsidian convention: always at root)
 ├── src/
 │   ├── types.ts              # Shared TypeScript interfaces (PaperMetadata, PluginSettings, …)
+│   ├── schema.ts             # Schema profiles and note-body helpers (no Obsidian imports)
 │   ├── settings.ts           # Settings tab UI
 │   ├── CrossrefService.ts    # Fetch metadata by DOI via Crossref API
 │   ├── ArxivService.ts       # Fetch metadata by arXiv ID (Semantic Scholar + arXiv fallback)
@@ -34,6 +53,7 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 │   ├── DisambiguationModal.ts # Modal: compare incoming vs vault entity, ask user
 │   ├── AuthorOverflowModal.ts # Modal: confirm import when a paper has many authors
 │   └── ImportService.ts      # Orchestrate the full import flow
+├── tests/                    # Unit tests (node:test) and fixtures shared with the Second Brain tools
 ├── styles.css                # Modal CSS
 ├── manifest.json             # Obsidian plugin manifest
 ├── package.json
@@ -134,6 +154,23 @@ echo "/path/to/Your Vault/.obsidian/plugins/research-importer" > .vault-path
    - Settings → Community Plugins → toggle the plugin off and on again.
 
 > **Tip – watch mode**: run `npm run dev` for incremental rebuilds on every file save. You still need to reload the plugin in Obsidian to pick up the changes.
+
+### Tests
+
+```bash
+npm test          # bundles tests/*.test.ts with esbuild and runs node --test
+npm run typecheck
+```
+
+`tests/fixtures/second-brain-expected.json` holds the values the Second Brain command-line importer (`sb lit add`) produces for the same papers: the plugin must produce the same citation keys and fields.
+
+### Install into a vault
+
+```bash
+VAULT_PLUGIN_DIR="/path/to/Vault/.obsidian/plugins/research-importer" npm run install-plugin
+```
+
+The script refuses to run without `VAULT_PLUGIN_DIR`, so no personal path lives in the repository.
 
 ### Commit your changes
 

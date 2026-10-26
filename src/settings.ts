@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ResearchImporterPlugin from "../main";
 import { DEFAULT_SETTINGS } from "./types";
+import { PROFILES, profileFor, type ProfileId } from "./schema";
 
 export { DEFAULT_SETTINGS };
 export type { PluginSettings } from "./types";
@@ -17,6 +18,29 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Research Literature Manager" });
+
+    new Setting(containerEl)
+      .setName("Note schema")
+      .setDesc(
+        "Property names and note layout of this vault. Legacy: lowercase properties and BibTeX in the frontmatter. " +
+        "Second Brain 0.3: Title Case properties, BibTeX in the note body below its source, new authors marked as Author."
+      )
+      .addDropdown((dropdown) => {
+        for (const profile of Object.values(PROFILES)) dropdown.addOption(profile.id, profile.label);
+        dropdown.setValue(this.plugin.settings.schemaProfile).onChange(async (value) => {
+          const before = profileFor(this.plugin.settings.schemaProfile).folders;
+          const after = profileFor(value).folders;
+          const s = this.plugin.settings;
+          // Move folders to the new defaults only where they were still the old defaults.
+          if (s.articlesFolder === before.articles) s.articlesFolder = after.articles;
+          if (s.booksFolder === before.books) s.booksFolder = after.books;
+          if (s.peopleFolder === before.people) s.peopleFolder = after.people;
+          if (s.journalsFolder === before.journals) s.journalsFolder = after.journals;
+          s.schemaProfile = value as ProfileId;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      });
 
     new Setting(containerEl)
       .setName("Articles folder")

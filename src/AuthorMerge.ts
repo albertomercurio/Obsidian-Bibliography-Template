@@ -10,7 +10,8 @@ import { hasDiacritics, isAbbreviationOf, normName } from "./nameUtils";
 
 export type FieldSource = "vault" | "incoming";
 
-export type PersonFieldKey = "first_name" | "last_name" | "ORCiD";
+/** Logical person fields; the active schema profile maps them to property names. */
+export type PersonFieldKey = "given" | "family" | "orcid";
 
 export interface MergeField {
   key: PersonFieldKey;
@@ -48,9 +49,9 @@ export function mergedFields(fields: MergeField[]): PersonFields {
     return field ? valueOf(field) : "";
   };
   return {
-    given: pick("first_name"),
-    family: pick("last_name"),
-    orcid: pick("ORCiD"),
+    given: pick("given"),
+    family: pick("family"),
+    orcid: pick("orcid"),
   };
 }
 
@@ -101,7 +102,7 @@ function resolveName(
 
 function resolveOrcid(vault: string, incoming: string): MergeField {
   const base = {
-    key: "ORCiD" as const,
+    key: "orcid" as const,
     label: "ORCID",
     vault,
     incoming: normOrcid(incoming),
@@ -131,8 +132,8 @@ export function planAuthorMerge(
   incoming: { given: string; family: string; orcid?: string }
 ): MergeField[] {
   return [
-    resolveName("first_name", "First name", vault.given, incoming.given),
-    resolveName("last_name", "Last name", vault.family, incoming.family),
+    resolveName("given", "First name", vault.given, incoming.given),
+    resolveName("family", "Last name", vault.family, incoming.family),
     resolveOrcid(vault.orcid, incoming.orcid ?? ""),
   ];
 }

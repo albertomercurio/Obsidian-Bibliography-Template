@@ -10,6 +10,7 @@ import { NoteCreator } from "./NoteCreator";
 import { DisambiguationModal } from "./DisambiguationModal";
 import { AuthorOverflowModal } from "./AuthorOverflowModal";
 import { additiveFields, planAuthorMerge, type MergeField } from "./AuthorMerge";
+import { bibtexStyle, profileFor, provenanceOf, type Provenance } from "./schema";
 
 type DeferredImportAction = () => Promise<void>;
 
@@ -123,6 +124,7 @@ export class ImportService {
       }
     }
 
+    const provenance = provenanceOf(metadata);
     const visibleAuthors = await this.getVisibleAuthors(metadata);
     if (visibleAuthors === null) {
       new Notice("Import canceled. No article note was created.", 5000);
@@ -133,7 +135,7 @@ export class ImportService {
     const authorNames: string[] = [];
     const deferredActions: DeferredImportAction[] = [];
     for (const author of visibleAuthors) {
-      const resolution = await this.resolveAuthor(author);
+      const resolution = await this.resolveAuthor(author, provenance);
       if (resolution === null) {
         new Notice("Import canceled. No article note was created.", 5000);
         return;
@@ -158,6 +160,7 @@ export class ImportService {
     const bibtex = generateBibtex({
       metadata,
       journalAbbrev: metadata.journalShort,
+      ...bibtexStyle(profileFor(this.settings.schemaProfile)),
     });
 
     // ---- 6. Create note ----------------------------------------------------
@@ -176,6 +179,7 @@ export class ImportService {
           metadata,
           bibtex,
           authorNames,
+          provenance,
         });
       } else {
         file = await this.creator.createArticle({
@@ -183,6 +187,8 @@ export class ImportService {
           bibtex,
           authorNames,
           journalName,
+          provenance,
+          totalAuthors: metadata.authors.length,
         });
       }
     } catch (err: any) {
@@ -199,12 +205,14 @@ export class ImportService {
   // --------------------------------------------------------------------------
 
   async refreshActiveNote(file: TFile): Promise<void> {
+    const profile = profileFor(this.settings.schemaProfile);
+    const k = profile.keys;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    const arxivId: string | undefined = fm?.["arxiv_id"]
-      ? String(fm["arxiv_id"]).trim()
+    const arxivId: string | undefined = fm?.[k.arxiv]
+      ? String(fm[k.arxiv]).trim()
       : undefined;
 
-    if (fm?.["type"] !== "Article" || !arxivId) {
+    if (fm?.[k.type] !== profile.types.article || !arxivId) {
       new Notice(
         "Refresh only works on arXiv-sourced article notes (need an arxiv_id).",
         6000
@@ -227,7 +235,7 @@ export class ImportService {
     // A real journal DOI from the fetch means it has now been published.
     const fetchedJournalDoi =
       !!metadata.doi && !/^10\.48550\/arxiv/i.test(metadata.doi);
-    const currentDoi = fm["doi"] ? String(fm["doi"]) : "";
+    const currentDoi = fm[k.doi] ? String(fm[k.doi]) : "";
     const alreadyPublished =
       !!currentDoi && !/^10\.48550\/arxiv/i.test(currentDoi);
     if (!fetchedJournalDoi || !metadata.journalFull || alreadyPublished) {
@@ -249,16 +257,18 @@ export class ImportService {
     const bibtex = generateBibtex({
       metadata,
       journalAbbrev: metadata.journalShort,
+      ...bibtexStyle(profile),
     });
 
     // ---- Write back --------------------------------------------------------
     await this.app.fileManager.processFrontMatter(file, (fmObj) => {
-      fmObj["doi"] = metadata.doi ?? null;
-      fmObj["journal"] = `[[${resolvedJournal.displayName}]]`;
-      fmObj["year"] = metadata.year > 0 ? metadata.year : fmObj["year"] ?? null;
-      fmObj["url"] = metadata.url ?? fmObj["url"] ?? null;
-      fmObj["bibtex"] = bibtex;
+      fmObj[k.doi] = metadata.doi ?? null;
+      fmObj[k.journal] = `[[${resolvedJournal.displayName}]]`;
+      fmObj[k.year] = metadata.year > 0 ? metadata.year : fmObj[k.year] ?? null;
+      if (profile.urlOnlyWithoutDoi && metadata.doi) delete fmObj[k.url];
+      else fmObj[k.url] = metadata.url ?? fmObj[k.url] ?? null;
     });
+    await this.creator.writeBibtex(file, bibtex, provenanceOf(metadata));
     this.index.indexFile(file);
 
     new Notice(
@@ -294,7 +304,8 @@ export class ImportService {
   // --------------------------------------------------------------------------
 
   private async resolveAuthor(
-    author: AuthorRaw
+    author: AuthorRaw,
+    provenance: Provenance
   ): Promise<PlannedEntityResolution | null> {
     const { given, family, orcid } = author;
     const match = this.index.findPerson(given, family, orcid);
@@ -361,6 +372,7 @@ export class ImportService {
           given,
           family,
           orcid: foundOrcid,
+          provenance,
         });
         return {
           displayName: plannedPerson.basename,
@@ -371,7 +383,7 @@ export class ImportService {
       }
     }
 
-    const plannedPerson = this.creator.planCreatePerson({ given, family, orcid });
+    const plannedPerson = this.creator.planCreatePerson({ given, family, orcid, provenance });
     return {
       displayName: plannedPerson.basename,
       actions: [async () => {
@@ -473,10 +485,11 @@ export class ImportService {
     orcid: string;
   } {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const k = profileFor(this.settings.schemaProfile).keys;
     return {
-      given: fm?.["first_name"] ?? "",
-      family: fm?.["last_name"] ?? "",
-      orcid: fm?.["ORCiD"] ?? "",
+      given: fm?.[k.firstName] ?? "",
+      family: fm?.[k.lastName] ?? "",
+      orcid: fm?.[k.orcid] ?? "",
     };
   }
 

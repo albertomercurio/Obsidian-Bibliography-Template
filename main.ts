@@ -6,6 +6,7 @@ import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ImportModal } from "./src/ImportModal";
 import { generateBibtex } from "./src/BibtexGenerator";
+import { bibtexFields, bibtexFromBody, bibtexStyle, profileFor, type SchemaProfile } from "./src/schema";
 
 export default class ResearchImporterPlugin extends Plugin {
   settings!: PluginSettings;
@@ -17,7 +18,7 @@ export default class ResearchImporterPlugin extends Plugin {
     await this.loadSettings();
 
     // Build in-memory vault index
-    this.index = new VaultIndex(this.app);
+    this.index = new VaultIndex(this.app, () => profileFor(this.settings.schemaProfile));
     // Wait for metadata cache to be ready before indexing
     this.app.workspace.onLayoutReady(() => {
       this.index.build();
@@ -120,11 +121,13 @@ export default class ResearchImporterPlugin extends Plugin {
   // --------------------------------------------------------------------------
 
   private async regenerateAllBibtex(): Promise<void> {
+    const profile = profileFor(this.settings.schemaProfile);
+    const k = profile.keys;
     const files = this.app.vault
       .getMarkdownFiles()
       .filter((f) => {
         const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-        return fm?.type === "Article" || fm?.type === "Book";
+        return fm?.[k.type] === profile.types.article || fm?.[k.type] === profile.types.book;
       });
 
     if (files.length === 0) {
@@ -140,31 +143,39 @@ export default class ResearchImporterPlugin extends Plugin {
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
         if (!fm) continue;
 
-        // Reconstruct minimal metadata needed for bibtex regeneration
+        // Fields the frontmatter does not carry (volume, pages, …) come from the
+        // existing entry, so regenerating never loses them.
+        const existing = profile.bibtexProperty
+          ? (fm[profile.bibtexProperty] as string | undefined)
+          : bibtexFromBody(await this.app.vault.cachedRead(file));
+        const old = bibtexFields(existing);
         const metadata = {
           inputType: "doi" as const,
-          doi: fm.doi,
-          arxivId: fm.arxiv_id,
-          title: fm.title ?? file.basename,
-          year: Number(fm.year) || 0,
-          authors: parseAuthorsFromFm(fm.authors),
+          doi: fm[k.doi] ?? old.doi,
+          arxivId: fm[k.arxiv] != null ? String(fm[k.arxiv]) : old.eprint,
+          title: fm[k.title] ?? file.basename,
+          year: Number(fm[k.year]) || 0,
+          authors: authorsFromLinks(fm[k.authors], this.app, file.path, profile),
           journalFull: undefined,
           journalShort: undefined,
-          itemType: (fm.type === "Book" ? "book" : "article") as "article" | "book",
+          volume: old.volume,
+          issue: old.number,
+          pages: old.pages,
+          publisher: old.publisher,
+          isbn: fm[k.isbn] ?? old.isbn,
+          itemType: (fm[k.type] === profile.types.book ? "book" : "article") as "article" | "book",
         };
 
-        // Extract journal abbreviation from existing wikilink "[[Physical Review Letters]]"
-        const journalRaw: string | undefined = fm.journal;
-        const journalAbbrev = resolveJournalAbbrev(
-          journalRaw,
-          this.app
-        );
+        // Journal abbreviation from the journal note linked in the frontmatter
+        const journalAbbrev = resolveJournalAbbrev(fm[k.journal], this.app, profile) ?? old.journal;
 
-        const newBibtex = generateBibtex({ metadata, journalAbbrev });
+        // When only some authors are linked (large collaborations), keep the full list.
+        const oldAuthors = old.author ? old.author.split(/\s+and\s+/).length : 0;
+        const authorField = oldAuthors > metadata.authors.length ? old.author : undefined;
+        const newBibtex = generateBibtex({ metadata, journalAbbrev, authorField, ...bibtexStyle(profile) });
 
-        await this.app.fileManager.processFrontMatter(file, (fmObj) => {
-          fmObj["bibtex"] = newBibtex;
-        });
+        // No provenance: nothing was re-fetched, so the source line stays as it is.
+        await this.creator.writeBibtex(file, newBibtex, null);
         updated++;
       } catch (err) {
         console.warn(`[ResearchImporter] Could not regenerate bibtex for ${file.path}:`, err);
@@ -179,21 +190,36 @@ export default class ResearchImporterPlugin extends Plugin {
 // Helpers used by regenerateAllBibtex
 // ---------------------------------------------------------------------------
 
-function parseAuthorsFromFm(authors: unknown): { given: string; family: string }[] {
+/**
+ * Authors from the frontmatter links, reading given and family names from each
+ * Person note (so "Carlos Sánchez Muñoz" keeps a two-word family name). Falls
+ * back to splitting the link text when the note or its name fields are missing.
+ */
+function authorsFromLinks(
+  authors: unknown,
+  app: App,
+  sourcePath: string,
+  profile: SchemaProfile
+): { given: string; family: string }[] {
   if (!Array.isArray(authors)) return [];
   return authors.map((a) => {
-    // Strip wikilink syntax "[[First Last]]"
-    const name = String(a).replace(/^\[\[/, "").replace(/\]\]$/, "").trim();
+    const name = String(a).replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
+    const person = app.metadataCache.getFirstLinkpathDest(name, sourcePath);
+    const fm = person ? app.metadataCache.getFileCache(person)?.frontmatter : undefined;
+    const given = fm?.[profile.keys.firstName];
+    const family = fm?.[profile.keys.lastName];
+    if (typeof family === "string" && family.trim()) {
+      return { given: typeof given === "string" ? given : "", family };
+    }
     const parts = name.split(/\s+/);
-    const family = parts[parts.length - 1];
-    const given = parts.slice(0, -1).join(" ");
-    return { given, family };
+    return { given: parts.slice(0, -1).join(" "), family: parts[parts.length - 1] };
   });
 }
 
 function resolveJournalAbbrev(
   journalFm: string | undefined,
-  app: App
+  app: App,
+  profile: SchemaProfile
 ): string | undefined {
   if (!journalFm) return undefined;
   // Strip wikilink: "[[Physical Review Letters]]" → "Physical Review Letters"
@@ -205,9 +231,13 @@ function resolveJournalAbbrev(
   if (!journalFile) return linkName;
 
   const fm = app.metadataCache.getFileCache(journalFile)?.frontmatter;
-  const aliases: unknown = fm?.["aliases"];
+  const k = profile.keys;
+  if (k.journalAbbreviation && fm?.[k.journalAbbreviation]) {
+    return String(fm[k.journalAbbreviation]);
+  }
+  const aliases: unknown = fm?.[k.aliases] ?? fm?.["aliases"];
   if (Array.isArray(aliases) && aliases.length > 0) {
     return String(aliases[0]);
   }
-  return fm?.["full_name"] ?? linkName;
+  return (k.journalFullName && fm?.[k.journalFullName]) || linkName;
 }
