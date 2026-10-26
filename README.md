@@ -11,10 +11,20 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 - **Deduplication**: checks DOI and arXiv ID against the vault before creating anything; prompts you when an author or journal might already exist.
 - **ORCID enrichment**: uses the [ORCID public API](https://pub.orcid.org) to find and attach ORCIDs to authors.
 - **Large-collaboration safeguard**: if a paper exceeds the configured author limit, the plugin warns before import and, if you continue, keeps only the first author in Obsidian while preserving the full BibTeX author list.
-- **Obsidian Bases ready**: Article, Book, Journal notes use typed frontmatter properties compatible with `Articles.base`, `Books.base`, `Journals.base`.
-- **Retroactive BibTeX**: a command to re-generate the `bibtex` field across all existing Article and Book notes if you change the format.
+- **Obsidian Bases ready**: notes use typed frontmatter properties that the vault's `Articles.base`, `People.base` and `Journals.base` views read.
+- **Retroactive BibTeX**: a command to re-generate the BibTeX entry of all existing Article and Book notes if you change the format. Volume, issue, pages and the full author list of large collaborations are kept from the existing entry; family names come from the Person notes.
 
 ---
+
+## Note format
+
+The plugin writes the note layout of the Second Brain vault (property names and bodies are defined in `src/schema.ts`):
+
+- **Article / Book** (`library/articles/Surname - YEAR - Title.md`): `Type`, `Title`, `Authors`, `Journal`, `Year`, `DOI`, `arXiv`, `PDF`, `Read`, `Topics`; `URL` only when there is no DOI. The abstract goes in a `> [!quote]` callout; the BibTeX entry goes in the `## BibTeX` section, below a `> [!info] Source: Crossref · DOI … · retrieved YYYY-MM-DD` line that marks it as checked against the source.
+- **Person** (`notes/people/First Last.md`): `First Name`, `Last Name`, `ORCID`, `Email`, `Affiliations`, `Relationship: [Author]` (an author is not automatically a collaborator), plus a `## Sources` line saying which record created it.
+- **Journal** (`library/journals/Full Name.md`): `Abbreviation`, used in the BibTeX `journal` field.
+
+Citation keys follow `SurnameYEARFirstWords` (`Macri2022SpontaneousScatteringRaman`), unchanged from earlier versions.
 
 ## Repository structure
 
@@ -23,6 +33,7 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 ├── main.ts                   # Plugin entry point (Obsidian convention: always at root)
 ├── src/
 │   ├── types.ts              # Shared TypeScript interfaces (PaperMetadata, PluginSettings, …)
+│   ├── schema.ts             # Property names, note bodies, BibTeX/abstract sections (no Obsidian imports)
 │   ├── settings.ts           # Settings tab UI
 │   ├── CrossrefService.ts    # Fetch metadata by DOI via Crossref API
 │   ├── ArxivService.ts       # Fetch metadata by arXiv ID (Semantic Scholar + arXiv fallback)
@@ -34,6 +45,7 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 │   ├── DisambiguationModal.ts # Modal: compare incoming vs vault entity, ask user
 │   ├── AuthorOverflowModal.ts # Modal: confirm import when a paper has many authors
 │   └── ImportService.ts      # Orchestrate the full import flow
+├── tests/                    # Unit tests (node:test) and fixtures shared with the Second Brain tools
 ├── styles.css                # Modal CSS
 ├── manifest.json             # Obsidian plugin manifest
 ├── package.json
@@ -45,24 +57,11 @@ A custom Obsidian plugin that imports academic papers from a DOI or arXiv ID and
 
 ## One-time vault setup
 
-After enabling the plugin in Obsidian, do this once:
+1. **Enable the plugin**: Settings → Community Plugins → *Research Literature Manager* → toggle on.
+2. **Check the folders** (Settings → Research Literature Manager): defaults are `library/articles`, `library/books`, `notes/people`, `library/journals`.
+3. **Review the author limit**: by default, imports with more than `25` authors ask for confirmation. If you continue, only the first author is linked in Obsidian metadata, while BibTeX keeps the full author list.
 
-1. **Enable the plugin**: Settings → Community Plugins → find *Research Literature Manager* → toggle on.
-2. **Configure Templater folder templates** (Settings → Templater → Folder Templates):
-
-   | Folder | Template |
-   |--------|----------|
-   | `Articles/` | `Article Template` |
-   | `Books/` | `Book Template` |
-   | `People/` | `Person Template` |
-   | `Journals/` | `Journal Template` |
-
-   This ensures that if you click an unresolved wikilink and create a note manually, it lands in the right folder with the right layout.
-
-3. **Check plugin settings** (Settings → Research Literature Manager): folder paths default to `Articles`, `Books`, `People`, `Journals` — adjust if your vault uses different names.
-4. **Review the author limit**: by default, imports with more than `25` authors ask for confirmation. If you continue, only the first author is linked in Obsidian metadata, while BibTeX still keeps the full author list.
-
----
+Note bodies are built into the plugin, so no template notes are needed.
 
 ## Usage
 
@@ -84,7 +83,7 @@ The plugin will:
 ### Re-generate BibTeX
 
 Command palette → **"Re-generate BibTeX for all articles and books"**.  
-Useful if you change the cite-key format or LaTeX encoding in `BibtexGenerator.ts`. Only the `bibtex` frontmatter field is updated; everything else is preserved.
+Useful if you change the cite-key format or LaTeX encoding in `BibtexGenerator.ts`. Only the BibTeX entry in the `## BibTeX` section is updated (volume, pages and the full author list are kept); the source line and everything else are preserved.
 
 ---
 
@@ -135,6 +134,23 @@ echo "/path/to/Your Vault/.obsidian/plugins/research-importer" > .vault-path
 
 > **Tip – watch mode**: run `npm run dev` for incremental rebuilds on every file save. You still need to reload the plugin in Obsidian to pick up the changes.
 
+### Tests
+
+```bash
+npm test          # bundles tests/*.test.ts with esbuild and runs node --test
+npm run typecheck
+```
+
+`tests/fixtures/second-brain-expected.json` holds the values the Second Brain command-line importer (`sb lit add`) produces for the same papers: the plugin must produce the same citation keys and fields.
+
+### Install into a vault
+
+```bash
+VAULT_PLUGIN_DIR="/path/to/Vault/.obsidian/plugins/research-importer" npm run install-plugin
+```
+
+The script refuses to run without `VAULT_PLUGIN_DIR`, so no personal path lives in the repository.
+
 ### Commit your changes
 
 ```bash
@@ -158,55 +174,3 @@ The compiled `main.js` is in `.gitignore` — only source files are tracked.
 | ORCID (record) | `https://pub.orcid.org/v3.0/{orcid}/person` | None (public records only) |
 
 ---
-
-## Note format
-
-### Article (`Articles/Surname - YEAR - Title.md`)
-
-```yaml
----
-type: Article
-doi: "10.xxxx/…"
-arxiv_id: "2301.xxxxx"
-title: "Full paper title"
-authors:
-  - "[[First Last]]"
-  - "[[First Last]]"
-journal: "[[Physical Review Letters]]"
-year: 2024
-url: "https://…"
-pdf:
-read: false
-bibtex: "@article{Surname2024Word,\n  …\n}"
-tags:
----
-```
-
-### Journal (`Journals/Full Name.md`)
-
-```yaml
----
-type: Journal
-full_name: "Physical Review Letters"
-aliases:
-  - "Phys. Rev. Lett."
-  - "PRL"
-tags:
----
-```
-
-The `aliases` field is native Obsidian — `[[Phys. Rev. Lett.]]` in any note automatically resolves to the Journal file.
-
-### Person (`People/First Last.md`)
-
-```yaml
----
-type: Person
-first_name: "Alberto"
-last_name: "Mercurio"
-ORCiD: "0000-0001-2345-6789"
-e-mail:
-cover_image:
-tags:
----
-```

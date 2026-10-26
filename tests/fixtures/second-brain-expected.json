@@ -1,0 +1,56 @@
+{
+  "_comment": "Valori prodotti da `sb lit add` (Second Brain) per gli stessi articoli: plugin e sb devono coincidere.",
+  "prl2022": {
+    "metadata": {
+      "inputType": "doi",
+      "doi": "10.1103/physrevlett.129.273602",
+      "arxivId": "2207.09470",
+      "title": "Spontaneous Scattering of Raman Photons from Cavity-QED Systems in the Ultrastrong Coupling Regime",
+      "year": 2022,
+      "authors": [
+        {"given": "Vincenzo", "family": "Macrì"},
+        {"given": "Alberto", "family": "Mercurio", "orcid": "0000-0001-7814-1936"},
+        {"given": "Franco", "family": "Nori", "orcid": "0000-0003-3682-7432"},
+        {"given": "Salvatore", "family": "Savasta"},
+        {"given": "Carlos", "family": "Sánchez Muñoz"}
+      ],
+      "journalFull": "Physical Review Letters",
+      "journalShort": "Phys. Rev. Lett.",
+      "volume": "129",
+      "issue": "27",
+      "pages": "273602",
+      "url": "https://doi.org/10.1103/physrevlett.129.273602",
+      "itemType": "article"
+    },
+    "citekey": "Macri2022SpontaneousScatteringRaman",
+    "author": "Macr\\`{i}, Vincenzo and Mercurio, Alberto and Nori, Franco and Savasta, Salvatore and S\\'{a}nchez Mu\\~{n}oz, Carlos",
+    "journal": "Phys. Rev. Lett.",
+    "eprint": "2207.09470"
+  },
+  "quantum2025": {
+    "metadata": {
+      "inputType": "doi",
+      "doi": "10.22331/q-2025-09-29-1866",
+      "arxivId": "2504.21440",
+      "title": "QuantumToolbox.jl: An efficient Julia framework for simulating open quantum systems",
+      "year": 2025,
+      "authors": [
+        {"given": "Alberto", "family": "Mercurio"},
+        {"given": "Yi-Te", "family": "Huang"},
+        {"given": "Li-Xun", "family": "Cai"},
+        {"given": "Yueh-Nan", "family": "Chen"},
+        {"given": "Vincenzo", "family": "Savona"},
+        {"given": "Franco", "family": "Nori"}
+      ],
+      "journalFull": "Quantum",
+      "journalShort": "Quantum",
+      "volume": "9",
+      "pages": "1866",
+      "itemType": "article"
+    },
+    "citekey": "Mercurio2025QuantumtoolboxJlEfficient",
+    "author": "Mercurio, Alberto and Huang, Yi-Te and Cai, Li-Xun and Chen, Yueh-Nan and Savona, Vincenzo and Nori, Franco",
+    "journal": "Quantum",
+    "eprint": "2504.21440"
+  }
+}

@@ -18,12 +18,13 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: "Research Literature Manager" });
 
+
     new Setting(containerEl)
       .setName("Articles folder")
       .setDesc("Vault folder where article notes are stored.")
       .addText((text) =>
         text
-          .setPlaceholder("Articles")
+          .setPlaceholder(DEFAULT_SETTINGS.articlesFolder)
           .setValue(this.plugin.settings.articlesFolder)
           .onChange(async (value) => {
             this.plugin.settings.articlesFolder = value.trim();
@@ -36,7 +37,7 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
       .setDesc("Vault folder where book notes are stored.")
       .addText((text) =>
         text
-          .setPlaceholder("Books")
+          .setPlaceholder(DEFAULT_SETTINGS.booksFolder)
           .setValue(this.plugin.settings.booksFolder)
           .onChange(async (value) => {
             this.plugin.settings.booksFolder = value.trim();
@@ -49,7 +50,7 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
       .setDesc("Vault folder where person notes are stored.")
       .addText((text) =>
         text
-          .setPlaceholder("People")
+          .setPlaceholder(DEFAULT_SETTINGS.peopleFolder)
           .setValue(this.plugin.settings.peopleFolder)
           .onChange(async (value) => {
             this.plugin.settings.peopleFolder = value.trim();
@@ -62,7 +63,7 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
       .setDesc("Vault folder where journal notes are stored.")
       .addText((text) =>
         text
-          .setPlaceholder("Journals")
+          .setPlaceholder(DEFAULT_SETTINGS.journalsFolder)
           .setValue(this.plugin.settings.journalsFolder)
           .onChange(async (value) => {
             this.plugin.settings.journalsFolder = value.trim();

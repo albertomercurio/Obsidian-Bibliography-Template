@@ -6,6 +6,7 @@ import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ImportModal } from "./src/ImportModal";
 import { generateBibtex } from "./src/BibtexGenerator";
+import { bibtexFields, bibtexFromBody, PROP, TYPES } from "./src/schema";
 
 export default class ResearchImporterPlugin extends Plugin {
   settings!: PluginSettings;
@@ -124,7 +125,7 @@ export default class ResearchImporterPlugin extends Plugin {
       .getMarkdownFiles()
       .filter((f) => {
         const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-        return fm?.type === "Article" || fm?.type === "Book";
+        return fm?.[PROP.type] === TYPES.article || fm?.[PROP.type] === TYPES.book;
       });
 
     if (files.length === 0) {
@@ -140,31 +141,37 @@ export default class ResearchImporterPlugin extends Plugin {
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
         if (!fm) continue;
 
-        // Reconstruct minimal metadata needed for bibtex regeneration
+        // Fields the frontmatter does not carry (volume, pages, …) come from the
+        // existing entry, so regenerating never loses them.
+        const existing = bibtexFromBody(await this.app.vault.cachedRead(file));
+        const old = bibtexFields(existing);
         const metadata = {
           inputType: "doi" as const,
-          doi: fm.doi,
-          arxivId: fm.arxiv_id,
-          title: fm.title ?? file.basename,
-          year: Number(fm.year) || 0,
-          authors: parseAuthorsFromFm(fm.authors),
+          doi: fm[PROP.doi] ?? old.doi,
+          arxivId: fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : old.eprint,
+          title: fm[PROP.title] ?? file.basename,
+          year: Number(fm[PROP.year]) || 0,
+          authors: authorsFromLinks(fm[PROP.authors], this.app, file.path),
           journalFull: undefined,
           journalShort: undefined,
-          itemType: (fm.type === "Book" ? "book" : "article") as "article" | "book",
+          volume: old.volume,
+          issue: old.number,
+          pages: old.pages,
+          publisher: old.publisher,
+          isbn: fm[PROP.isbn] ?? old.isbn,
+          itemType: (fm[PROP.type] === TYPES.book ? "book" : "article") as "article" | "book",
         };
 
-        // Extract journal abbreviation from existing wikilink "[[Physical Review Letters]]"
-        const journalRaw: string | undefined = fm.journal;
-        const journalAbbrev = resolveJournalAbbrev(
-          journalRaw,
-          this.app
-        );
+        // Journal abbreviation from the journal note linked in the frontmatter
+        const journalAbbrev = resolveJournalAbbrev(fm[PROP.journal], this.app) ?? old.journal;
 
-        const newBibtex = generateBibtex({ metadata, journalAbbrev });
+        // When only some authors are linked (large collaborations), keep the full list.
+        const oldAuthors = old.author ? old.author.split(/\s+and\s+/).length : 0;
+        const authorField = oldAuthors > metadata.authors.length ? old.author : undefined;
+        const newBibtex = generateBibtex({ metadata, journalAbbrev, authorField });
 
-        await this.app.fileManager.processFrontMatter(file, (fmObj) => {
-          fmObj["bibtex"] = newBibtex;
-        });
+        // No provenance: nothing was re-fetched, so the source line stays as it is.
+        await this.creator.writeBibtex(file, newBibtex, null);
         updated++;
       } catch (err) {
         console.warn(`[ResearchImporter] Could not regenerate bibtex for ${file.path}:`, err);
@@ -179,15 +186,28 @@ export default class ResearchImporterPlugin extends Plugin {
 // Helpers used by regenerateAllBibtex
 // ---------------------------------------------------------------------------
 
-function parseAuthorsFromFm(authors: unknown): { given: string; family: string }[] {
+/**
+ * Authors from the frontmatter links, reading given and family names from each
+ * Person note (so "Carlos Sánchez Muñoz" keeps a two-word family name). Falls
+ * back to splitting the link text when the note or its name fields are missing.
+ */
+function authorsFromLinks(
+  authors: unknown,
+  app: App,
+  sourcePath: string
+): { given: string; family: string }[] {
   if (!Array.isArray(authors)) return [];
   return authors.map((a) => {
-    // Strip wikilink syntax "[[First Last]]"
-    const name = String(a).replace(/^\[\[/, "").replace(/\]\]$/, "").trim();
+    const name = String(a).replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
+    const person = app.metadataCache.getFirstLinkpathDest(name, sourcePath);
+    const fm = person ? app.metadataCache.getFileCache(person)?.frontmatter : undefined;
+    const given = fm?.[PROP.firstName];
+    const family = fm?.[PROP.lastName];
+    if (typeof family === "string" && family.trim()) {
+      return { given: typeof given === "string" ? given : "", family };
+    }
     const parts = name.split(/\s+/);
-    const family = parts[parts.length - 1];
-    const given = parts.slice(0, -1).join(" ");
-    return { given, family };
+    return { given: parts.slice(0, -1).join(" "), family: parts[parts.length - 1] };
   });
 }
 
@@ -205,9 +225,6 @@ function resolveJournalAbbrev(
   if (!journalFile) return linkName;
 
   const fm = app.metadataCache.getFileCache(journalFile)?.frontmatter;
-  const aliases: unknown = fm?.["aliases"];
-  if (Array.isArray(aliases) && aliases.length > 0) {
-    return String(aliases[0]);
-  }
-  return fm?.["full_name"] ?? linkName;
+  if (fm?.[PROP.abbreviation]) return String(fm[PROP.abbreviation]);
+  return linkName;
 }

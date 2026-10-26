@@ -2,6 +2,7 @@ import { App, TFile } from "obsidian";
 import type { PersonMatchResult, JournalMatchResult } from "./types";
 import { initialOf, normName } from "./nameUtils";
 import { normOrcid } from "./AuthorMerge";
+import { PROP, TYPES } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Normalisation helpers
@@ -82,13 +83,13 @@ export class VaultIndex {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache?.frontmatter) return;
     const fm = cache.frontmatter;
-    const type: string = fm["type"] ?? "";
+    const type: string = fm[PROP.type] ?? "";
     const keys: FileKeys = {};
 
-    if (type === "Person") {
-      const given: string = fm["first_name"] ?? "";
-      const family: string = fm["last_name"] ?? "";
-      const orcid: string | undefined = fm["ORCiD"] ?? undefined;
+    if (type === TYPES.person) {
+      const given: string = fm[PROP.firstName] ?? "";
+      const family: string = fm[PROP.lastName] ?? "";
+      const orcid: string | undefined = fm[PROP.orcid] ?? undefined;
 
       if (orcid) {
         keys.orcid = normOrcid(orcid);
@@ -106,9 +107,9 @@ export class VaultIndex {
       }
     }
 
-    if (type === "Article" || type === "Book") {
-      const doi: string | undefined = fm["doi"];
-      const arxiv: string | undefined = fm["arxiv_id"];
+    if (type === TYPES.article || type === TYPES.book) {
+      const doi: string | undefined = fm[PROP.doi];
+      const arxiv: string | undefined = fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : undefined;
       if (doi) {
         keys.doi = normDoi(doi);
         this.doiIndex.set(keys.doi, file);
@@ -119,12 +120,16 @@ export class VaultIndex {
       }
     }
 
-    if (type === "Journal") {
-      const fullName: string = fm["full_name"] ?? file.basename;
-      keys.journalKeys = [normJournal(fullName)];
+    if (type === TYPES.journal) {
+      keys.journalKeys = [normJournal(file.basename)];
       this.journalIndex.set(keys.journalKeys[0], file);
+      const abbreviation: unknown = fm[PROP.abbreviation];
+      if (typeof abbreviation === "string" && abbreviation.trim()) {
+        keys.journalKeys.push(normJournal(abbreviation));
+        this.journalIndex.set(normJournal(abbreviation), file);
+      }
 
-      const aliases: unknown = fm["aliases"];
+      const aliases: unknown = fm[PROP.aliases] ?? fm["aliases"];
       const aliasList: string[] = Array.isArray(aliases)
         ? aliases.map(String)
         : typeof aliases === "string"

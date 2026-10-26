@@ -2,7 +2,17 @@ import { App, Notice, normalizePath, TFile } from "obsidian";
 import type { PaperMetadata } from "./types";
 import type { PluginSettings } from "./types";
 import { VaultIndex } from "./VaultIndex";
-import { mergedFields, valueOf, type MergeField } from "./AuthorMerge";
+import { mergedFields, valueOf, type MergeField, type PersonFieldKey } from "./AuthorMerge";
+import {
+  abstractCallout,
+  BODIES,
+  bibtexSection,
+  PROP,
+  replaceBibtexBlock,
+  setSection,
+  TYPES,
+  type Provenance,
+} from "./schema";
 
 // ---------------------------------------------------------------------------
 // Filename sanitisation
@@ -36,6 +46,12 @@ function wikilink(name: string): string {
   return `[[${name}]]`;
 }
 
+const PERSON_KEYS: Record<PersonFieldKey, string> = {
+  given: PROP.firstName,
+  family: PROP.lastName,
+  orcid: PROP.orcid,
+};
+
 export interface PlannedNoteAction<T> {
   basename: string;
   commit: () => Promise<T>;
@@ -51,24 +67,6 @@ export class NoteCreator {
     private settings: PluginSettings,
     private index: VaultIndex
   ) {}
-
-  // --------------------------------------------------------------------------
-  // Template handling
-  // --------------------------------------------------------------------------
-
-  /**
-   * Reads a template file's content and returns it as a string.
-   * Falls back to a minimal stub if the template cannot be found.
-   */
-  private async templateContent(templateBasename: string): Promise<string> {
-    const templateFile = this.app.vault.getMarkdownFiles().find(
-      (f) =>
-        f.basename === templateBasename &&
-        f.path.toLowerCase().includes("template")
-    );
-    if (!templateFile) return "---\n---\n\n## Notes\n";
-    return await this.app.vault.read(templateFile);
-  }
 
   async ensureFolder(folderPath: string): Promise<void> {
     const norm = normalizePath(folderPath);
@@ -89,6 +87,7 @@ export class NoteCreator {
     given: string;
     family: string;
     orcid?: string;
+    provenance?: Provenance;
   }): PlannedNoteAction<string> {
     return {
       basename: this.personBasename(params),
@@ -157,7 +156,8 @@ export class NoteCreator {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       for (const field of changes) {
         const value = valueOf(field);
-        if (value !== (fm[field.key] ?? "")) fm[field.key] = value;
+        const key = PERSON_KEYS[field.key];
+        if (value !== (fm[key] ?? "")) fm[key] = value;
       }
     });
     this.index.indexFile(file);
@@ -203,13 +203,14 @@ export class NoteCreator {
   // --------------------------------------------------------------------------
 
   /**
-   * Creates a minimal Person stub. Returns the display name (used as wikilink).
-   * If the file already exists, returns the existing basename.
+   * Creates a Person note for an author. Returns the display name (used as
+   * wikilink). If the file already exists, returns the existing basename.
    */
   async createPerson(params: {
     given: string;
     family: string;
     orcid?: string;
+    provenance?: Provenance;
   }): Promise<string> {
     const safeName = this.personBasename(params);
     const folder = this.settings.peopleFolder;
@@ -221,15 +222,21 @@ export class NoteCreator {
       return safeName;
     }
 
-    const file = await this.app.vault.create(
-      filePath,
-      await this.templateContent("Person Template")
-    );
+    let body = BODIES.person;
+    if (params.provenance) {
+      const { source, ident, date } = params.provenance;
+      body = setSection(body, "Sources", `- Created on ${date} from the ${source} record of ${ident}.`);
+    }
+    const file = await this.app.vault.create(filePath, body);
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm["type"] = "Person";
-      fm["first_name"] = params.given;
-      fm["last_name"] = params.family;
-      fm["ORCiD"] = params.orcid ?? "";
+      fm[PROP.type] = TYPES.person;
+      fm[PROP.firstName] = params.given;
+      fm[PROP.lastName] = params.family;
+      fm[PROP.orcid] = params.orcid ?? null;
+      fm[PROP.email] = null;
+      fm[PROP.affiliations] = null;
+      // A person created from a paper is known only as an author, not as a collaborator.
+      fm[PROP.relationship] = ["Author"];
     });
 
     this.index.indexFile(file);
@@ -241,8 +248,8 @@ export class NoteCreator {
   // --------------------------------------------------------------------------
 
   /**
-   * Creates a Journal note. Returns the display name used as wikilink.
-   * Uses full_name as filename; stores abbreviation in aliases.
+   * Creates a Journal note named after the full title. The abbreviation, used
+   * in BibTeX, goes in its own property. Returns the display name.
    */
   async createJournal(params: {
     fullName: string;
@@ -257,19 +264,10 @@ export class NoteCreator {
       return safeName;
     }
 
-    const aliases: string[] =
-      params.shortName && params.shortName !== params.fullName
-        ? [params.shortName]
-        : [];
-
-    const file = await this.app.vault.create(
-      filePath,
-      await this.templateContent("Journal Template")
-    );
+    const file = await this.app.vault.create(filePath, BODIES.journal);
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm["type"] = "Journal";
-      fm["full_name"] = params.fullName;
-      fm["aliases"] = aliases.length ? aliases : null;
+      fm[PROP.type] = TYPES.journal;
+      fm[PROP.abbreviation] = params.shortName ?? null;
     });
 
     this.index.indexFile(file);
@@ -287,50 +285,55 @@ export class NoteCreator {
     authorNames: string[];
     /** Display name (file basename) of the journal, or undefined */
     journalName?: string;
+    provenance: Provenance;
+    /** Total number of authors when only some are linked. */
+    totalAuthors?: number;
   }): Promise<TFile> {
-    const { metadata, bibtex, authorNames, journalName } = params;
-    const firstFamily =
-      metadata.authors[0]?.family ?? "";
+    const { metadata, bibtex, authorNames, journalName, provenance } = params;
+    const firstFamily = metadata.authors[0]?.family ?? "";
     const filename = articleFilename(metadata, firstFamily);
     const folder = this.settings.articlesFolder;
     await this.ensureFolder(folder);
     const filePath = normalizePath(`${folder}/${filename}.md`);
 
-    const authorLinks = authorNames.map(wikilink);
-    const journalLink = journalName ? wikilink(journalName) : null;
-
-    let content = await this.templateContent("Article Template");
-    if (metadata.abstract) {
-      // Match the Abstract heading, consume its trailing newline and ALL
-      // subsequent blank lines from the template, then insert exactly one
-      // blank line before the abstract text.
-      // A replacer function is used (not a replacement string) so that `$`
-      // sequences in the abstract's LaTeX (e.g. `$1.0 \times 10^{-21}$`,
-      // `$$...$$`) are inserted literally instead of being interpreted as
-      // `$1`, `$2`, `$$`, `$&` replacement patterns.
-      const abstract = metadata.abstract;
-      content = content.replace(
-        /^(#{1,6}\s+Abstract)\s*\n(\s*\n)*/im,
-        (_match, heading: string) => `${heading}\n\n${abstract}\n\n`
-      );
-    }
+    const extra = params.totalAuthors && params.totalAuthors > authorNames.length
+      ? [`Only the first of ${params.totalAuthors} authors is linked in Authors; the full list is in the entry below.`]
+      : [];
+    let content = setSection(BODIES.article, "Abstract", abstractCallout(metadata.abstract, provenance));
+    content = setSection(content, "BibTeX", bibtexSection(bibtex, provenance, extra));
 
     const file = await this.app.vault.create(filePath, content);
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm["type"] = "Article";
-      fm["doi"] = metadata.doi ?? null;
-      fm["arxiv_id"] = metadata.arxivId ?? null;
-      fm["title"] = metadata.title;
-      fm["authors"] = authorLinks;
-      fm["journal"] = journalLink;
-      fm["year"] = metadata.year > 0 ? metadata.year : null;
-      fm["url"] = metadata.url ?? null;
-      fm["read"] = false;
-      fm["bibtex"] = bibtex;
+      fm[PROP.type] = TYPES.article;
+      fm[PROP.title] = metadata.title;
+      fm[PROP.authors] = authorNames.map(wikilink);
+      fm[PROP.journal] = journalName ? wikilink(journalName) : null;
+      fm[PROP.year] = metadata.year > 0 ? metadata.year : null;
+      if (metadata.doi) fm[PROP.doi] = metadata.doi;
+      if (metadata.arxivId) fm[PROP.arxiv] = metadata.arxivId;
+      if (metadata.url && !metadata.doi) fm[PROP.url] = metadata.url;
+      fm[PROP.pdf] = null;
+      fm[PROP.read] = false;
+      fm[PROP.topics] = null;
     });
 
     this.index.indexFile(file);
     return file;
+  }
+
+  // --------------------------------------------------------------------------
+  // BibTeX
+  // --------------------------------------------------------------------------
+
+  /**
+   * Writes a BibTeX entry into the note's `## BibTeX` section. With a
+   * provenance the source line is rewritten (the entry was just checked against
+   * the source); without one only the entry changes.
+   */
+  async writeBibtex(file: TFile, bibtex: string, provenance: Provenance | null): Promise<void> {
+    await this.app.vault.process(file, (text) =>
+      provenance ? setSection(text, "BibTeX", bibtexSection(bibtex, provenance)) : replaceBibtexBlock(text, bibtex)
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -341,30 +344,28 @@ export class NoteCreator {
     metadata: PaperMetadata;
     bibtex: string;
     authorNames: string[];
+    provenance: Provenance;
   }): Promise<TFile> {
-    const { metadata, bibtex, authorNames } = params;
+    const { metadata, bibtex, authorNames, provenance } = params;
     const firstFamily = metadata.authors[0]?.family ?? "";
     const filename = articleFilename(metadata, firstFamily);
     const folder = this.settings.booksFolder;
     await this.ensureFolder(folder);
     const filePath = normalizePath(`${folder}/${filename}.md`);
 
-    const authorLinks = authorNames.map(wikilink);
-
-    const file = await this.app.vault.create(
-      filePath,
-      await this.templateContent("Book Template")
-    );
+    const content = setSection(BODIES.book, "BibTeX", bibtexSection(bibtex, provenance));
+    const file = await this.app.vault.create(filePath, content);
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      fm["type"] = "Book";
-      fm["isbn"] = metadata.isbn ?? null;
-      fm["title"] = metadata.title;
-      fm["authors"] = authorLinks;
-      fm["publisher"] = metadata.publisher ?? null;
-      fm["year"] = metadata.year > 0 ? metadata.year : null;
-      fm["url"] = metadata.url ?? null;
-      fm["read"] = false;
-      fm["bibtex"] = bibtex;
+      fm[PROP.type] = TYPES.book;
+      fm[PROP.title] = metadata.title;
+      fm[PROP.authors] = authorNames.map(wikilink);
+      fm[PROP.publisher] = metadata.publisher ?? null;
+      fm[PROP.year] = metadata.year > 0 ? metadata.year : null;
+      fm[PROP.isbn] = metadata.isbn ?? null;
+      if (metadata.doi) fm[PROP.doi] = metadata.doi;
+      fm[PROP.pdf] = null;
+      fm[PROP.read] = false;
+      fm[PROP.topics] = null;
     });
 
     this.index.indexFile(file);

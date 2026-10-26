@@ -23,6 +23,9 @@ const LATEX_MAP: Record<string, string> = {
   ø: "{\\o}", œ: "{\\oe}",
   ù: "\\`{u}", ú: "\\'{u}", û: "\\^{u}", ü: '\\"{u}',
   ý: "\\'{y}", ÿ: '\\"{y}',
+  ł: "{\\l}", Ł: "{\\L}", č: "\\v{c}", Č: "\\v{C}", š: "\\v{s}", Š: "\\v{S}",
+  ž: "\\v{z}", Ž: "\\v{Z}", ř: "\\v{r}", ć: "\\'{c}", ń: "\\'{n}", ś: "\\'{s}",
+  ź: "\\'{z}", ż: "\\.{z}", ő: "\\H{o}", ű: "\\H{u}",
 };
 
 function toLatex(s: string): string {
@@ -59,6 +62,8 @@ export interface BibtexOptions {
   metadata: PaperMetadata;
   /** The wikilink display name of the journal, used for the abbreviated field */
   journalAbbrev?: string;
+  /** Ready-made author field, used verbatim (e.g. a full list kept when only some authors are linked). */
+  authorField?: string;
 }
 
 export function generateBibtex(opts: BibtexOptions): string {
@@ -75,7 +80,7 @@ export function generateBibtex(opts: BibtexOptions): string {
   const citeKey = `${firstFamily}${year}${words}`;
 
   // Author field in LaTeX format: "Family, Given and Family, Given"
-  const authorField = metadata.authors
+  const authorField = opts.authorField ?? metadata.authors
     .map((a) => {
       const family = toLatex(a.family);
       const given = toLatex(a.given);
@@ -108,14 +113,20 @@ export function generateBibtex(opts: BibtexOptions): string {
     if (metadata.issue) fields.push(["number", metadata.issue]);
     if (metadata.pages) fields.push(["pages", metadata.pages]);
     if (metadata.doi) fields.push(["doi", metadata.doi]);
-    if (metadata.url) fields.push(["url", metadata.url]);
+    // No url when a DOI resolves; eprint keeps the arXiv version citable.
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
+    if (metadata.arxivId) {
+      fields.push(["eprint", metadata.arxivId]);
+      fields.push(["archivePrefix", "arXiv"]);
+    }
   } else if (entryType === "book") {
     if (authorField) fields.push(["author", authorField]);
     fields.push(["title", `{${toLatex(metadata.title)}}`]);
     if (metadata.publisher) fields.push(["publisher", toLatex(metadata.publisher)]);
     fields.push(["year", year]);
     if (metadata.isbn) fields.push(["isbn", metadata.isbn]);
-    if (metadata.url) fields.push(["url", metadata.url]);
+    if (metadata.doi) fields.push(["doi", metadata.doi]);
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
   } else {
     // preprint / misc
     if (authorField) fields.push(["author", authorField]);
@@ -127,7 +138,7 @@ export function generateBibtex(opts: BibtexOptions): string {
       fields.push(["primaryClass", ""]); // caller can update
     }
     if (metadata.doi) fields.push(["doi", metadata.doi]);
-    if (metadata.url) fields.push(["url", metadata.url]);
+    if (metadata.url && !metadata.doi) fields.push(["url", metadata.url]);
     fields.push(["note", "Preprint"]);
   }
 

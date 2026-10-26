@@ -1,5 +1,7 @@
 // Shared types for the Research Literature Manager plugin
 
+import { DEFAULT_FOLDERS } from "./schema";
+
 export interface PluginSettings {
   articlesFolder: string;
   booksFolder: string;
@@ -10,10 +12,10 @@ export interface PluginSettings {
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-  articlesFolder: "Articles",
-  booksFolder: "Books",
-  peopleFolder: "People",
-  journalsFolder: "Journals",
+  articlesFolder: DEFAULT_FOLDERS.articles,
+  booksFolder: DEFAULT_FOLDERS.books,
+  peopleFolder: DEFAULT_FOLDERS.people,
+  journalsFolder: DEFAULT_FOLDERS.journals,
   skipOrcidSearch: false,
   maxAuthors: 25,
 };
