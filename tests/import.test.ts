@@ -2,7 +2,7 @@
 // same path the command line and the plugin take, without network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ImportService } from "../src/ImportService";
@@ -117,9 +117,65 @@ test("reference check sees a changed page and restores it", async () => {
   const result = await checker.check({ path: ARTICLE, basename: "" });
   assert.ok(result.issues.some((i) => i.startsWith("Title:")));
   assert.ok(result.issues.some((i) => i.includes("pages")));
-  await result.repair!();
+  await result.restore!();
   const fixed = parseFrontmatter(splitNote(readFileSync(path, "utf8")).yaml)!;
   assert.match(fixed.BibTeX, /pages = \{273602\}/);
   assert.match(fixed.BibTeX, /^@article\{Macri2022SpontaneousScatteringRaman,/, "citation key kept");
   assert.equal((await checker.check({ path: ARTICLE, basename: "" })).issues.length, 0);
+});
+
+function checkerFor(root: string) {
+  const s = services(root, true);
+  return new ReferenceCheck(s.v, s.settings, s.index, s.creator, s.importer);
+}
+
+test("completing adds only what is missing: disagreeing authors stay, no notes are created", async () => {
+  const root = vault();
+  await services(root, true).importer.run(DOI);
+  const path = join(root, ARTICLE);
+  writeFileSync(join(root, "People/Mario Rossi.md"), "---\nType: Person\nFirst Name: Mario\nLast Name: Rossi\n---\n");
+  writeFileSync(path, readFileSync(path, "utf8").replace(/,?\n\s*pages = \{273602\}/, "").replace('"[[Salvatore Savasta]]"', '"[[Mario Rossi]]"'));
+  const result = await checkerFor(root).check({ path: ARTICLE, basename: "" });
+  assert.deepEqual(result.missing, ["add to BibTeX: pages"]);
+  assert.ok(result.conflicts.some((i) => i.startsWith("Authors:")));
+  const people = readdirSync(join(root, "People")).length;
+  await result.complete!();
+  const fm = parseFrontmatter(splitNote(readFileSync(path, "utf8")).yaml)!;
+  assert.match(fm.BibTeX, /pages = \{273602\}\n\}$/);
+  assert.ok(fm.Authors.includes("[[Mario Rossi]]"), "what the note says is kept");
+  assert.equal(readdirSync(join(root, "People")).length, people);
+});
+
+for (const [what, from, to] of [["title", "Title: Spontaneous", "Title: Proceedings"], ["year", "Year: 2022", "Year: 2021"]]) {
+  test(`nothing is added when the ${what} disagrees: the record may be another work`, async () => {
+    const root = vault();
+    await services(root, true).importer.run(DOI);
+    const path = join(root, ARTICLE);
+    writeFileSync(path, readFileSync(path, "utf8").replace(/,?\n\s*pages = \{273602\}/, "").replace(from, to));
+    const result = await checkerFor(root).check({ path: ARTICLE, basename: "" });
+    assert.equal(result.complete, undefined);
+    assert.ok(result.restore, "it can still be restored, one note at a time");
+  });
+}
+
+test("authors already linked stay linked when the source writes their name another way", async () => {
+  const root = vault();
+  await services(root, true).importer.run(DOI);
+  const path = join(root, ARTICLE);
+  writeFileSync(join(root, "People/S. Savasta.md"), "---\nType: Person\nFirst Name: S.\nLast Name: Savasta\n---\n");
+  writeFileSync(join(root, "People/V. Frisk Macrì.md"), "---\nType: Person\nFirst Name: V.\nLast Name: Frisk Macrì\n---\n");
+  writeFileSync(path, readFileSync(path, "utf8").replace('"[[Salvatore Savasta]]"', '"[[S. Savasta]]"').replace('"[[Vincenzo Macrì]]"', '"[[V. Frisk Macrì]]"'));
+  const result = await checkerFor(root).check({ path: ARTICLE, basename: "" });
+  assert.deepEqual(result.creates, []);
+  assert.deepEqual(result.issues, []);
+});
+
+test("an author with another name is not taken for the one linked", async () => {
+  const root = vault();
+  await services(root, true).importer.run(DOI);
+  const path = join(root, ARTICLE);
+  writeFileSync(join(root, "People/Mario Savasta.md"), "---\nType: Person\nFirst Name: Mario\nLast Name: Savasta\n---\n");
+  writeFileSync(path, readFileSync(path, "utf8").replace('"[[Salvatore Savasta]]"', '"[[Mario Savasta]]"'));
+  const result = await checkerFor(root).check({ path: ARTICLE, basename: "" });
+  assert.ok(result.conflicts.some((i) => i.startsWith("Authors:")));
 });

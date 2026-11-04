@@ -4,7 +4,8 @@
 // --apply. Settings come from the plugin's data.json in the vault.
 //
 //   node cli.mjs add <DOI|arXiv> [--topic Name]... [--arxiv ID] [--apply]
-//   node cli.mjs check [note]... [--repair] [--apply]
+//   node cli.mjs check [note]... [--repair] [--apply]     add what notes are missing
+//   node cli.mjs check <note>... --restore [--apply]      overwrite named notes with the source
 //   node cli.mjs export [note]        BibTeX on standard output, nothing written
 //
 // Options: --vault DIR (default: current folder), --log FILE (append a log entry).
@@ -25,7 +26,8 @@ import { NodeUi, NodeVault, nodeHttp } from "./src/node/NodeHost";
 
 const USAGE = `usage:
   add <DOI|arXiv> [--topic Name]... [--arxiv ID] [--apply]   import a paper
-  check [note]... [--repair] [--apply]                       compare references with their source
+  check [note]... [--repair] [--apply]                       compare references with their source; --repair adds what is missing
+  check <note>... --restore [--apply]                        make the named notes say what the source says
   export [note]                                              print the BibTeX of all references, or of those linked to a note`;
 
 const { values, positionals } = parseArgs({
@@ -35,6 +37,7 @@ const { values, positionals } = parseArgs({
     log: { type: "string" },
     apply: { type: "boolean", default: false },
     repair: { type: "boolean", default: false },
+    restore: { type: "boolean", default: false },
     topic: { type: "string", multiple: true, default: [] },
     arxiv: { type: "string" },
   },
@@ -108,6 +111,7 @@ async function exportBibtex(name?: string): Promise<number> {
 }
 
 async function check(names: string[]): Promise<number> {
+  if (values.restore && !names.length) throw new Error("--restore overwrites what notes say: name them, one decision at a time.");
   const { settings, vault, index, creator, importer } = setup();
   const checker = new ReferenceCheck(vault, settings, index, creator, importer);
   const notes = names.length ? names.map((name) => findNote(vault, name)) : allReferences(vault, settings.templatesFolder);
@@ -118,11 +122,12 @@ async function check(names: string[]): Promise<number> {
     await new Promise((resolve) => setTimeout(resolve, 200)); // courtesy towards the public APIs
     if (!result.issues.length) continue;
     problems++;
-    say(`${values.repair && result.repair ? "+" : "!"} ${note.path}`);
+    const change = values.restore ? result.restore : values.repair ? result.complete : undefined;
+    say(`${change ? "+" : "!"} ${note.path}`);
     for (const issue of result.issues) say(`    ${issue}`);
-    for (const created of result.creates) say(`    create: ${created}`);
-    if (values.repair && result.repair) {
-      await result.repair();
+    if (values.restore) for (const created of result.creates) say(`    create: ${created}`);
+    if (change) {
+      await change();
       repaired.push(note.path);
     }
   }
@@ -131,9 +136,9 @@ async function check(names: string[]): Promise<number> {
     return 0;
   }
   say(`\n${notes.length} references checked, ${problems} with differences.`);
-  if (values.repair && !values.apply) say("Preview: nothing written. Run again with --repair --apply to restore from the source.");
-  if (values.repair && values.apply && repaired.length) {
-    log("lit-check", `${repaired.length} references restored from their source`, vault.changes.map((c) => `${label(c.action)}: ${c.path}`));
+  if (repaired.length && !values.apply) say("Preview: nothing written. Run again with --apply to write.");
+  if (repaired.length && values.apply) {
+    log("lit-check", `${repaired.length} references ${values.restore ? "restored from" : "completed from"} their source`, vault.changes.map((c) => `${label(c.action)}: ${c.path}`));
   }
   return 1;
 }

@@ -5,7 +5,8 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 ## What it does
 
 - **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist.
-- **Check the active reference against its source**, and **check all references**: compares title, authors, journal, year, DOI and the BibTeX content, and restores them from the source if you confirm. Your notes, `Read`, `Topics` and the citation key are kept.
+- **Check the active reference against its source:** compares title, authors, journal, year, DOI and the BibTeX content, and restores them from the source if you confirm. Your notes, `Read`, `Topics` and the citation key are kept.
+- **Check all references:** the same comparison on the whole vault. It offers to add what notes are missing, such as an article number in the BibTeX, and creates no notes. Where a note and its source disagree it changes nothing and lists them, because a source can be wrong too: decide one note at a time with the command above.
 - **Refresh metadata for active note:** turns a preprint into its published version.
 - **Re-generate BibTeX** for all articles and books.
 - **Copy the BibTeX** of all references, or of those linked to the active note: the references it cites, and those naming it as author, topic or journal.
@@ -22,7 +23,8 @@ The same code runs on the files of a vault, without Obsidian, for scripts and ag
 
 ```sh
 node cli.mjs add <DOI|arXiv> [--topic Name]... [--arxiv ID] [--apply] [--vault DIR] [--log FILE]
-node cli.mjs check [note]... [--repair] [--apply] [--vault DIR] [--log FILE]
+node cli.mjs check [note]... [--repair] [--apply] [--vault DIR] [--log FILE]   # --repair adds what is missing
+node cli.mjs check <note>... --restore [--apply] [--vault DIR] [--log FILE]   # overwrites the named notes with the source
 node cli.mjs export [note] [--vault DIR]    # prints BibTeX, writes nothing
 ```
 

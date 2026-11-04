@@ -43,7 +43,7 @@ test("signature diff ignores layout and sees content", () => {
   const metadata = expected.prl2022.metadata as PaperMetadata;
   const canonical = generateBibtex({ metadata, journalAbbrev: metadata.journalShort });
   const relaid = canonical.replace("{Spontaneous", "{{S}pontaneous").replace(/  /g, "    ");
-  assert.deepEqual(signatureDiff(relaid, canonical), []);
-  assert.deepEqual(signatureDiff(canonical.replace("273602", "273603"), canonical), ["pages"]);
-  assert.deepEqual(signatureDiff(canonical.replace("Nori, Franco and ", ""), canonical), ["author"]);
+  assert.deepEqual(signatureDiff(relaid, canonical), { missing: [], different: [] });
+  assert.deepEqual(signatureDiff(canonical.replace("273602", "273603"), canonical).different, ["pages"]);
+  assert.deepEqual(signatureDiff(canonical.replace("Nori, Franco and ", ""), canonical).different, ["author"]);
 });
