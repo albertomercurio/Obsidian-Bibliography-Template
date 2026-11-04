@@ -64,6 +64,10 @@ export interface BibtexOptions {
   journalAbbrev?: string;
   /** Ready-made author field, used verbatim (e.g. a full list kept when only some authors are linked). */
   authorField?: string;
+  /** Citation key to keep (regenerating or repairing an existing entry). */
+  citeKey?: string;
+  /** Keys already used in the vault: a clash gets a letter, "Key" → "Keya". */
+  takenKeys?: Set<string>;
 }
 
 export function generateBibtex(opts: BibtexOptions): string {
@@ -77,7 +81,11 @@ export function generateBibtex(opts: BibtexOptions): string {
     : "Unknown";
   const year = metadata.year > 0 ? String(metadata.year) : "XXXX";
   const words = titleWords(metadata.title);
-  const citeKey = `${firstFamily}${year}${words}`;
+  const baseKey = `${firstFamily}${year}${words}`;
+  let citeKey = opts.citeKey ?? baseKey;
+  for (let suffix = 97; !opts.citeKey && opts.takenKeys?.has(citeKey); suffix++) {
+    citeKey = baseKey + String.fromCharCode(suffix);
+  }
 
   // Author field in LaTeX format: "Family, Given and Family, Given"
   const authorField = opts.authorField ?? metadata.authors

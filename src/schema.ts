@@ -1,8 +1,6 @@
 // ---------------------------------------------------------------------------
-// Note schema of the Second Brain vault
-//
-// Property names, note bodies and the BibTeX/abstract sections, in one place.
-// Pure module: no Obsidian imports, so it can be unit-tested with Node.
+// Note layout: property names, default templates and body helpers.
+// Pure module: unit-tested with Node.
 // ---------------------------------------------------------------------------
 
 export const TYPES = { article: "Article", book: "Book", person: "Person", journal: "Journal" } as const;
@@ -21,6 +19,7 @@ export const PROP = {
   isbn: "ISBN",
   publisher: "Publisher",
   topics: "Topics",
+  bibtex: "BibTeX",
   firstName: "First Name",
   lastName: "Last Name",
   orcid: "ORCID",
@@ -31,26 +30,42 @@ export const PROP = {
   aliases: "Aliases",
 } as const;
 
-export const DEFAULT_FOLDERS = {
-  articles: "library/articles",
-  books: "library/books",
-  people: "notes/people",
-  journals: "library/journals",
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+
+/** The properties of a note, in order, and its body. */
+export interface NoteTemplate {
+  keys: string[];
+  body: string;
+}
+
+/** Used when the templates folder has no file named after the type (e.g. Article.md). */
+export const DEFAULT_TEMPLATES: Record<string, NoteTemplate> = {
+  [TYPES.article]: {
+    keys: [PROP.title, PROP.authors, PROP.journal, PROP.year, PROP.doi, PROP.arxiv, PROP.pdf, PROP.read, PROP.topics, PROP.bibtex],
+    body: "## Abstract\n\n## Notes\n",
+  },
+  [TYPES.book]: {
+    keys: [PROP.title, PROP.authors, PROP.publisher, PROP.year, PROP.isbn, PROP.doi, PROP.pdf, PROP.read, PROP.topics, PROP.bibtex],
+    body: "## Description\n\n## Notes\n",
+  },
+  [TYPES.person]: {
+    keys: [PROP.firstName, PROP.lastName, PROP.orcid, PROP.email, PROP.affiliations, PROP.relationship],
+    body: "## Notes\n",
+  },
+  [TYPES.journal]: { keys: [PROP.abbreviation], body: "## Notes\n" },
 };
 
-const GENERATED_COMMENT =
-  "<!-- Model-written text only inside an [!ai] callout with date, model and sources. -->";
-
-export const BODIES = {
-  article: `## Abstract\n\n## My Notes\n\n## Generated Summary\n${GENERATED_COMMENT}\n\n## BibTeX\n`,
-  book: "## Description\n\n## My Notes\n\n## BibTeX\n",
-  person:
-    "## Facts\n\n## Reported\n<!-- What others reported: always say who and when. -->\n\n" +
-    '## Impressions\n<!-- Alberto\'s own impressions only, dated and in context: "- 2026-10-26 (context): ...". -->\n\n' +
-    "## Links\n![[Roles.base#Person's Roles]]\n![[Projects.base#Person's Projects]]\n" +
-    "![[Articles.base#Author's Articles]]\n![[Events.base#Person's Events]]\n\n## Sources\n",
-  journal: "## Links\n![[Articles.base#Journal Articles]]\n",
-};
+/** Reads a template file: its top-level property names, in order, and its body. */
+export function parseTemplate(text: string): NoteTemplate {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/);
+  const keys = (m?.[1] ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.match(/^([^\s#-][^:]*):/)?.[1])
+    .filter((key): key is string => Boolean(key) && key !== PROP.type);
+  return { keys, body: m ? text.slice(m[0].length) : text };
+}
 
 // ---------------------------------------------------------------------------
 // Provenance
@@ -82,12 +97,6 @@ export function provenanceOf(meta: { doi?: string; arxivId?: string }, date: str
 // Body sections
 // ---------------------------------------------------------------------------
 
-/** The callout + fenced block that marks a BibTeX entry as verified against its source. */
-export function bibtexSection(bibtex: string, prov: Provenance, extraLines: string[] = []): string {
-  const callout = [`> [!info] Source: ${prov.source} · ${prov.ident} · retrieved ${prov.date}`, ...extraLines.map((l) => `> ${l}`)];
-  return `${callout.join("\n")}\n\n\`\`\`bibtex\n${bibtex.trim()}\n\`\`\``;
-}
-
 /**
  * Replaces the content of a `## Heading` section, or appends the section when
  * missing. A replacer function keeps `$` in LaTeX literal.
@@ -101,25 +110,20 @@ export function setSection(body: string, heading: string, content: string): stri
   return `${body.replace(/\s*$/, "")}\n\n## ${heading}\n\n${content}\n`;
 }
 
-/** Abstract as a quote callout, so it stays distinct from the user's own notes. */
-export function abstractCallout(abstract: string | undefined, prov: Provenance): string {
+/**
+ * Abstract as a quote callout, so it stays distinct from the user's own notes;
+ * the header records where and when the metadata was retrieved.
+ */
+export function abstractCallout(abstract: string | undefined, prov: Provenance, extraLines: string[] = []): string {
   const text = (abstract ?? "").trim() || "Not provided by the source.";
   const lines = text.split(/\n+/).map((l) => `> ${l}`);
-  return `> [!quote] ${prov.source} · retrieved ${prov.date}\n${lines.join("\n")}`;
+  const extra = extraLines.length ? `\n>\n${extraLines.map((l) => `> ${l}`).join("\n")}` : "";
+  return `> [!quote] ${prov.source} · ${prov.ident} · retrieved ${prov.date}\n${lines.join("\n")}${extra}`;
 }
 
-/** Replaces only the fenced BibTeX block, keeping the source line (nothing was re-fetched). */
-export function replaceBibtexBlock(body: string, bibtex: string): string {
-  const fenced = "```bibtex\n" + bibtex.trim() + "\n```";
-  const block = /```bibtex[ \t]*\n[\s\S]*?\n```/;
-  return block.test(body) ? body.replace(block, () => fenced) : setSection(body, "BibTeX", fenced);
-}
-
-/** Extracts the first fenced BibTeX block of a note body, if any. */
-export function bibtexFromBody(body: string): string | undefined {
-  const m = body.match(/```bibtex[ \t]*\n([\s\S]*?)\n```/);
-  return m ? m[1].trim() : undefined;
-}
+// ---------------------------------------------------------------------------
+// BibTeX values
+// ---------------------------------------------------------------------------
 
 /** Field values of a BibTeX entry (outer braces or quotes removed), keys in lowercase. */
 export function bibtexFields(entry: string | undefined): Record<string, string> {
@@ -131,4 +135,10 @@ export function bibtexFields(entry: string | undefined): Record<string, string> 
     fields[m[1].toLowerCase()] = m[2].replace(/^[{"]/, "").replace(/[}"]$/, "").trim();
   }
   return fields;
+}
+
+/** The citation key of an entry: "@article{Key," → "Key". */
+export function citekeyOf(entry: unknown): string | undefined {
+  const m = typeof entry === "string" ? entry.match(/@\s*\w+\s*\{\s*([^,\s]+)\s*,/) : null;
+  return m ? m[1] : undefined;
 }

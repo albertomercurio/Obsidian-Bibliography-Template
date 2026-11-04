@@ -4,43 +4,8 @@ import {
   mergedFields,
   valueOf,
   type MergeField,
-} from "./AuthorMerge";
-
-export type DisambiguationChoice =
-  | "same"
-  | "different"
-  | "merge"
-  | "skip"
-  | "abort";
-
-export interface DisambiguationResult {
-  choice: DisambiguationChoice;
-  /** The merge plan as the user left it. Only meaningful for choice "merge". */
-  mergeFields?: MergeField[];
-}
-
-export interface DisambiguationData {
-  /** Short label for what is being compared, e.g. "author" or "journal" */
-  entityType: string;
-  /** Data from the incoming paper (API) */
-  incoming: {
-    label: string;
-    details?: string;
-  };
-  /** Candidate already in the vault */
-  candidate: {
-    label: string;
-    details?: string;
-  };
-  /**
-   * Per-field merge plan. When present the modal shows a "Merge" button and a
-   * preview of the resulting record, with a dropdown per differing field so
-   * the user can override the default choice. Only meaningful for authors.
-   */
-  mergePlan?: MergeField[];
-  /** Current filename of the vault note, to warn about an impending rename. */
-  candidateBasename?: string;
-}
+} from "../AuthorMerge";
+import type { DisambiguationChoice, DisambiguationData, DisambiguationResult } from "../ports";
 
 /**
  * Generic modal asking the user whether an incoming entity (author / journal)

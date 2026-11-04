@@ -1,21 +1,24 @@
-// Shared types for the Research Literature Manager plugin
+// Shared types of the plugin and its command line
 
-import { DEFAULT_FOLDERS } from "./schema";
+import type { NoteRef } from "./ports";
 
 export interface PluginSettings {
   articlesFolder: string;
   booksFolder: string;
   peopleFolder: string;
   journalsFolder: string;
+  /** Optional folder with Article.md, Book.md, Person.md, Journal.md: properties and body of new notes. */
+  templatesFolder: string;
   skipOrcidSearch: boolean;
   maxAuthors: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-  articlesFolder: DEFAULT_FOLDERS.articles,
-  booksFolder: DEFAULT_FOLDERS.books,
-  peopleFolder: DEFAULT_FOLDERS.people,
-  journalsFolder: DEFAULT_FOLDERS.journals,
+  articlesFolder: "Articles",
+  booksFolder: "Books",
+  peopleFolder: "People",
+  journalsFolder: "Journals",
+  templatesFolder: "",
   skipOrcidSearch: false,
   maxAuthors: 25,
 };
@@ -61,13 +64,15 @@ export type MatchKind = "exact" | "partial" | "none";
 
 export interface PersonMatchResult {
   kind: MatchKind;
-  /** The vault file, present when kind !== "none" */
-  file?: import("obsidian").TFile;
+  /** The vault note, present when kind !== "none" */
+  file?: NoteRef;
+  /** How the candidate matched, for hosts that decide without asking. */
+  match?: "fullName" | "initial";
   /** Human-readable reason, e.g. "full name match" */
   reason?: string;
 }
 
 export interface JournalMatchResult {
   kind: "exact" | "none";
-  file?: import("obsidian").TFile;
+  file?: NoteRef;
 }

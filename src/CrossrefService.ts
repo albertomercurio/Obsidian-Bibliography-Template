@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import type { Http } from "./ports";
 import { MathMLToLaTeX } from "mathml-to-latex";
 import type { AuthorRaw, PaperMetadata } from "./types";
 import { OpenLibraryService } from "./OpenLibraryService";
@@ -92,7 +92,11 @@ function repairReplacementCharacters(value: string | undefined): string | undefi
 export class CrossrefService {
   // Some Crossref book records contain DOI, title, year, and ISBN but omit the
   // people fields entirely. For those cases we try a secondary ISBN lookup.
-  private openLibrary = new OpenLibraryService();
+  private openLibrary: OpenLibraryService;
+
+  constructor(private http: Http) {
+    this.openLibrary = new OpenLibraryService(http);
+  }
 
   async fetchByDOI(doi: string): Promise<PaperMetadata> {
     const clean = doi
@@ -101,7 +105,7 @@ export class CrossrefService {
       .trim();
 
     const url = `https://api.crossref.org/works/${encodeURIComponent(clean)}`;
-    const response = await requestUrl({ url, throw: false });
+    const response = await this.http({ url });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(

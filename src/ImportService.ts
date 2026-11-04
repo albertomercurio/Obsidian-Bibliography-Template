@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from "obsidian";
+import type { Http, NoteRef, Ui, VaultPort } from "./ports";
 import type { AuthorRaw, PaperMetadata } from "./types";
 import type { PluginSettings } from "./types";
 import { CrossrefService } from "./CrossrefService";
@@ -7,10 +7,8 @@ import { OrcidService } from "./OrcidService";
 import { generateBibtex } from "./BibtexGenerator";
 import { VaultIndex, normDoi } from "./VaultIndex";
 import { NoteCreator } from "./NoteCreator";
-import { DisambiguationModal } from "./DisambiguationModal";
-import { AuthorOverflowModal } from "./AuthorOverflowModal";
 import { additiveFields, planAuthorMerge, type MergeField } from "./AuthorMerge";
-import { PROP, provenanceOf, TYPES, type Provenance } from "./schema";
+import { citekeyOf, PROP, provenanceOf, TYPES, type Provenance } from "./schema";
 
 type DeferredImportAction = () => Promise<void>;
 
@@ -25,7 +23,7 @@ interface PlannedEntityResolution {
 // Input detection
 // ---------------------------------------------------------------------------
 
-function detectInput(raw: string): { type: "doi" | "arxiv"; id: string } {
+export function detectInput(raw: string): { type: "doi" | "arxiv"; id: string } {
   const s = raw.trim();
 
   // arXiv proxy DOI (registered with DataCite, not Crossref):
@@ -71,64 +69,77 @@ function formatFetchError(err: unknown): string {
 // ImportService
 // ---------------------------------------------------------------------------
 
+export interface ImportOptions {
+  /** Topic note names to link from the new article. */
+  topics?: string[];
+  /** arXiv id of the preprint, when importing the published version by DOI. */
+  arxivId?: string;
+}
+
 export class ImportService {
-  private crossref = new CrossrefService();
-  private arxiv = new ArxivService();
-  private orcid = new OrcidService();
+  private crossref: CrossrefService;
+  private arxiv: ArxivService;
+  private orcid: OrcidService;
 
   constructor(
-    private app: App,
+    private vault: VaultPort,
+    private ui: Ui,
+    http: Http,
     private settings: PluginSettings,
     private index: VaultIndex,
     private creator: NoteCreator
-  ) {}
+  ) {
+    this.crossref = new CrossrefService(http);
+    this.arxiv = new ArxivService(http);
+    this.orcid = new OrcidService(http);
+  }
 
-  async run(rawInput: string): Promise<void> {
+  /**
+   * Fetches the record of a DOI or arXiv id. Its text comes from outside and ends
+   * up in a new note, where Templater would run any "<% %>" command: defuse them.
+   */
+  async fetch(rawInput: string): Promise<PaperMetadata> {
     const { type, id } = detectInput(rawInput);
+    const record = await (type === "arxiv" ? this.arxiv.fetchByArxivId(id) : this.crossref.fetchByDOI(id));
+    return JSON.parse(JSON.stringify(record).replace(/<%/g, "< %"));
+  }
 
+  /** Imports a paper; returns the new note, or null when nothing was created. */
+  async run(rawInput: string, options: ImportOptions = {}): Promise<NoteRef | null> {
     // ---- 1. Fetch metadata -------------------------------------------------
     let metadata: PaperMetadata;
     try {
-      new Notice("Fetching metadata…", 3000);
-      metadata =
-        type === "arxiv"
-          ? await this.arxiv.fetchByArxivId(id)
-          : await this.crossref.fetchByDOI(id);
+      this.ui.notice("Fetching metadata…", 3000);
+      metadata = await this.fetch(rawInput);
     } catch (err: unknown) {
-      new Notice(`❌ ${formatFetchError(err)}`, 7000);
-      return;
+      this.ui.notice(`❌ ${formatFetchError(err)}`, 7000);
+      return null;
     }
+    if (options.arxivId) metadata.arxivId = detectInput(options.arxivId).id.replace(/^arxiv:/i, "");
 
     // ---- 2. Duplicate check ------------------------------------------------
     if (metadata.doi) {
       const existing = this.index.doiIndex.get(normDoi(metadata.doi));
       if (existing) {
-        new Notice(
-          `⚠️ This paper already exists in your vault:\n"${existing.basename}"`,
-          8000
-        );
-        // Open existing note
-        this.app.workspace.openLinkText(existing.basename, "", false);
-        return;
+        this.ui.notice(`⚠️ This paper already exists in your vault:\n"${existing.basename}"`, 8000);
+        this.ui.open(existing.basename);
+        return null;
       }
     }
     if (metadata.arxivId) {
       const existing = this.index.arxivIndex.get(metadata.arxivId);
       if (existing) {
-        new Notice(
-          `⚠️ This paper already exists in your vault:\n"${existing.basename}"`,
-          8000
-        );
-        this.app.workspace.openLinkText(existing.basename, "", false);
-        return;
+        this.ui.notice(`⚠️ This paper already exists in your vault:\n"${existing.basename}"`, 8000);
+        this.ui.open(existing.basename);
+        return null;
       }
     }
 
     const provenance = provenanceOf(metadata);
     const visibleAuthors = await this.getVisibleAuthors(metadata);
     if (visibleAuthors === null) {
-      new Notice("Import canceled. No article note was created.", 5000);
-      return;
+      this.ui.notice("Import canceled. No article note was created.", 5000);
+      return null;
     }
 
     // ---- 3. Resolve authors ------------------------------------------------
@@ -137,8 +148,8 @@ export class ImportService {
     for (const author of visibleAuthors) {
       const resolution = await this.resolveAuthor(author, provenance);
       if (resolution === null) {
-        new Notice("Import canceled. No article note was created.", 5000);
-        return;
+        this.ui.notice("Import canceled. No article note was created.", 5000);
+        return null;
       }
       authorNames.push(resolution.displayName);
       deferredActions.push(...resolution.actions);
@@ -149,8 +160,8 @@ export class ImportService {
     if (metadata.journalFull) {
       const resolvedJournal = await this.resolveJournal(metadata);
       if (resolvedJournal === null) {
-        new Notice("Import canceled. No article note was created.", 5000);
-        return;
+        this.ui.notice("Import canceled. No article note was created.", 5000);
+        return null;
       }
       journalName = resolvedJournal.displayName;
       deferredActions.push(...resolvedJournal.actions);
@@ -159,11 +170,12 @@ export class ImportService {
     // ---- 5. Generate bibtex ------------------------------------------------
     const bibtex = generateBibtex({
       metadata,
-      journalAbbrev: metadata.journalShort,
+      journalAbbrev: this.journalAbbrev(journalName) ?? metadata.journalShort,
+      takenKeys: this.index.citeKeys,
     });
 
     // ---- 6. Create note ----------------------------------------------------
-    let file: TFile;
+    let file: NoteRef;
     try {
       if (this.creator.publicationFileExists(metadata)) {
         throw new Error("A note with the same filename already exists.");
@@ -179,6 +191,7 @@ export class ImportService {
           bibtex,
           authorNames,
           provenance,
+          topics: options.topics,
         });
       } else {
         file = await this.creator.createArticle({
@@ -188,42 +201,49 @@ export class ImportService {
           journalName,
           provenance,
           totalAuthors: metadata.authors.length,
+          topics: options.topics,
         });
       }
     } catch (err: any) {
-      new Notice(`❌ Could not create note: ${err.message}`, 7000);
-      return;
+      this.ui.notice(`❌ Could not create note: ${err.message}`, 7000);
+      return null;
     }
 
-    new Notice(`✅ Imported: "${file.basename}"`, 5000);
-    this.app.workspace.openLinkText(file.basename, "", false);
+    this.ui.notice(`✅ Imported: "${file.basename}"`, 5000);
+    this.ui.open(file.basename);
+    return file;
+  }
+
+  /** Abbreviation of a journal note already in the vault, used in BibTeX. */
+  private journalAbbrev(journalName: string | undefined): string | undefined {
+    if (!journalName) return undefined;
+    const note = this.vault.resolveLink(journalName, "");
+    const abbreviation = note ? this.vault.frontmatter(note.path)?.[PROP.abbreviation] : undefined;
+    return typeof abbreviation === "string" && abbreviation.trim() ? abbreviation : undefined;
   }
 
   // --------------------------------------------------------------------------
   // Refresh: promote a preprint note to its published version
   // --------------------------------------------------------------------------
 
-  async refreshActiveNote(file: TFile): Promise<void> {
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+  async refreshActiveNote(file: NoteRef): Promise<void> {
+    const fm = this.vault.frontmatter(file.path);
     const arxivId: string | undefined = fm?.[PROP.arxiv]
       ? String(fm[PROP.arxiv]).trim()
       : undefined;
 
     if (fm?.[PROP.type] !== TYPES.article || !arxivId) {
-      new Notice(
-        "Refresh only works on article notes with an arXiv id.",
-        6000
-      );
+      this.ui.notice("Refresh only works on article notes with an arXiv id.", 6000);
       return;
     }
 
     // ---- Re-fetch metadata -------------------------------------------------
     let metadata: PaperMetadata;
     try {
-      new Notice("Checking for published version…", 3000);
+      this.ui.notice("Checking for published version…", 3000);
       metadata = await this.arxiv.fetchByArxivId(arxivId);
     } catch (err: unknown) {
-      new Notice(`❌ ${formatFetchError(err)}`, 7000);
+      this.ui.notice(`❌ ${formatFetchError(err)}`, 7000);
       return;
     }
 
@@ -236,14 +256,14 @@ export class ImportService {
     const alreadyPublished =
       !!currentDoi && !/^10\.48550\/arxiv/i.test(currentDoi);
     if (!fetchedJournalDoi || !metadata.journalFull || alreadyPublished) {
-      new Notice("No publication update found — still a preprint.", 5000);
+      this.ui.notice("No publication update found — still a preprint.", 5000);
       return;
     }
 
     // ---- Resolve journal (create the note if missing) ----------------------
     const resolvedJournal = await this.resolveJournal(metadata);
     if (resolvedJournal === null) {
-      new Notice("Refresh canceled. The note was not changed.", 5000);
+      this.ui.notice("Refresh canceled. The note was not changed.", 5000);
       return;
     }
     for (const action of resolvedJournal.actions) {
@@ -253,23 +273,20 @@ export class ImportService {
     // ---- Regenerate bibtex (@misc → @article) ------------------------------
     const bibtex = generateBibtex({
       metadata,
-      journalAbbrev: metadata.journalShort,
+      journalAbbrev: this.journalAbbrev(resolvedJournal.displayName) ?? metadata.journalShort,
+      citeKey: citekeyOf(fm[PROP.bibtex]),
     });
 
     // ---- Write back --------------------------------------------------------
-    await this.app.fileManager.processFrontMatter(file, (fmObj) => {
+    await this.vault.processFrontMatter(file.path, (fmObj) => {
       fmObj[PROP.doi] = metadata.doi ?? null;
       fmObj[PROP.journal] = `[[${resolvedJournal.displayName}]]`;
       fmObj[PROP.year] = metadata.year > 0 ? metadata.year : fmObj[PROP.year] ?? null;
       if (metadata.doi) delete fmObj[PROP.url]; // the DOI resolves; a URL would be redundant
     });
-    await this.creator.writeBibtex(file, bibtex, provenanceOf(metadata));
-    this.index.indexFile(file);
+    await this.creator.writeBibtex(file, bibtex);
 
-    new Notice(
-      `✅ Updated to published version: "${resolvedJournal.displayName}"`,
-      6000
-    );
+    this.ui.notice(`✅ Updated to published version: "${resolvedJournal.displayName}"`, 6000);
   }
 
   private async getVisibleAuthors(
@@ -280,12 +297,7 @@ export class ImportService {
       return metadata.authors;
     }
 
-    const confirmed = await new AuthorOverflowModal(
-      this.app,
-      metadata.authors.length,
-      maxAuthors,
-      OVERFLOW_VISIBLE_AUTHORS
-    ).ask();
+    const confirmed = await this.ui.confirmOverflow(metadata.authors.length, maxAuthors, OVERFLOW_VISIBLE_AUTHORS);
 
     if (!confirmed) {
       return null;
@@ -313,8 +325,9 @@ export class ImportService {
       const candidate = this.personFields(match.file);
       const plan = planAuthorMerge(candidate, author);
 
-      const modal = new DisambiguationModal(this.app, {
+      const { choice, mergeFields } = await this.ui.disambiguate({
         entityType: "author",
+        match: match.match,
         incoming: {
           label: `${given} ${family}`.trim(),
           details: orcid ? `ORCID: ${orcid}` : undefined,
@@ -326,7 +339,6 @@ export class ImportService {
         mergePlan: plan,
         candidateBasename: match.file.basename,
       });
-      const { choice, mergeFields } = await modal.ask();
 
       if (choice === "abort") {
         return null;
@@ -409,8 +421,9 @@ export class ImportService {
       return undefined;
     }
 
-    const modal = new DisambiguationModal(this.app, {
+    const { choice } = await this.ui.disambiguate({
       entityType: "author (ORCID match)",
+      match: "orcidSearch",
       incoming: {
         label: `${given} ${family}`.trim(),
         details: "From paper metadata",
@@ -427,7 +440,6 @@ export class ImportService {
           .join(" · "),
       },
     });
-    const { choice } = await modal.ask();
     if (choice === "abort") {
       return null;
     }
@@ -474,12 +486,12 @@ export class ImportService {
   // --------------------------------------------------------------------------
 
   /** Reads the Person frontmatter this plugin manages off an existing note. */
-  private personFields(file: TFile): {
+  private personFields(file: NoteRef): {
     given: string;
     family: string;
     orcid: string;
   } {
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fm = this.vault.frontmatter(file.path);
     return {
       given: fm?.[PROP.firstName] ?? "",
       family: fm?.[PROP.lastName] ?? "",
@@ -493,7 +505,7 @@ export class ImportService {
    * that is what the explicit "merge" choice is for.
    */
   private reuseExisting(
-    file: TFile,
+    file: NoteRef,
     author: AuthorRaw
   ): PlannedEntityResolution {
     return {
