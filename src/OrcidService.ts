@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import type { Http } from "./ports";
 
 export interface OrcidRecord {
   orcid: string;
@@ -9,6 +9,8 @@ export interface OrcidRecord {
 }
 
 export class OrcidService {
+  constructor(private http: Http) {}
+
   private readonly BASE = "https://pub.orcid.org/v3.0";
   private readonly HEADERS = {
     Accept: "application/json",
@@ -26,7 +28,7 @@ export class OrcidService {
     const givenQ = encodeURIComponent(givenFirst);
 
     const url = `${this.BASE}/search/?q=family-name:${familyQ}+AND+given-names:${givenQ}&rows=5`;
-    const response = await requestUrl({ url, headers: this.HEADERS, throw: false });
+    const response = await this.http({ url, headers: this.HEADERS });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`ORCID search failed: ${response.status}`);
@@ -44,7 +46,7 @@ export class OrcidService {
    */
   async getRecord(orcid: string): Promise<OrcidRecord> {
     const url = `${this.BASE}/${orcid}/person`;
-    const response = await requestUrl({ url, headers: this.HEADERS, throw: false });
+    const response = await this.http({ url, headers: this.HEADERS });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(

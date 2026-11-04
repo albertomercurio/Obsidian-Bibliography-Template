@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import type { Http } from "./ports";
 import type { AuthorRaw, PaperMetadata } from "./types";
 
 interface OpenLibraryEditionResponse {
@@ -12,6 +12,8 @@ interface OpenLibraryAuthorResponse {
 }
 
 export class OpenLibraryService {
+  constructor(private http: Http) {}
+
   async enrichBookMetadata(metadata: PaperMetadata): Promise<PaperMetadata> {
     if (metadata.itemType !== "book" || !metadata.isbn) {
       return metadata;
@@ -41,10 +43,7 @@ export class OpenLibraryService {
   }
 
   private async fetchEdition(isbn: string): Promise<OpenLibraryEditionResponse | null> {
-    const response = await requestUrl({
-      url: `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
-      throw: false,
-    });
+    const response = await this.http({ url: `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json` });
     if (response.status < 200 || response.status >= 300) {
       return null;
     }
@@ -62,10 +61,7 @@ export class OpenLibraryService {
         .map((author) => author.key)
         .filter((key): key is string => Boolean(key))
         .map(async (key) => {
-          const response = await requestUrl({
-            url: `https://openlibrary.org${key}.json`,
-            throw: false,
-          });
+          const response = await this.http({ url: `https://openlibrary.org${key}.json` });
           if (response.status < 200 || response.status >= 300) {
             return null;
           }

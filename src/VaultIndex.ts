@@ -1,7 +1,8 @@
-import { App, TFile } from "obsidian";
+import type { NoteRef, VaultPort } from "./ports";
 import type { PersonMatchResult, JournalMatchResult } from "./types";
 import { initialOf, normName } from "./nameUtils";
 import { normOrcid } from "./AuthorMerge";
+import { citekeyOf, PROP, TYPES } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Normalisation helpers
@@ -28,26 +29,28 @@ interface FileKeys {
   initKey?: string;
   doi?: string;
   arxiv?: string;
+  citeKey?: string;
   journalKeys?: string[];
 }
 
 export class VaultIndex {
-  private app: App;
 
   /** ORCID → file */
-  private orcidIndex = new Map<string, TFile>();
+  private orcidIndex = new Map<string, NoteRef>();
   /** Normalised "given family" → file */
-  private fullNameIndex = new Map<string, TFile>();
+  private fullNameIndex = new Map<string, NoteRef>();
   /** Normalised "initial family" (e.g. "a mercurio") → file[] */
-  private initialIndex = new Map<string, TFile[]>();
+  private initialIndex = new Map<string, NoteRef[]>();
 
   /** doi (normalised) → file */
-  doiIndex = new Map<string, TFile>();
+  doiIndex = new Map<string, NoteRef>();
   /** arxiv id → file */
-  arxivIndex = new Map<string, TFile>();
+  arxivIndex = new Map<string, NoteRef>();
+  /** Citation keys of the BibTeX entries in the vault. */
+  citeKeys = new Set<string>();
 
   /** Normalised journal key (full name or alias) → file */
-  private journalIndex = new Map<string, TFile>();
+  private journalIndex = new Map<string, NoteRef>();
 
   /**
    * Reverse map: file.path → all keys under which this file is stored.
@@ -55,9 +58,8 @@ export class VaultIndex {
    */
   private fileKeysIndex = new Map<string, FileKeys>();
 
-  constructor(app: App) {
-    this.app = app;
-  }
+  /** Notes in `ignoredFolder` (the templates) are not real people, papers or journals. */
+  constructor(private vault: VaultPort, private ignoredFolder = "") {}
 
   build(): void {
     this.orcidIndex.clear();
@@ -68,27 +70,27 @@ export class VaultIndex {
     this.journalIndex.clear();
     this.fileKeysIndex.clear();
 
-    for (const file of this.app.vault.getMarkdownFiles()) {
+    for (const file of this.vault.markdownFiles()) {
       this.indexFile(file);
     }
   }
 
   /** Call this when a file is created/modified. Safe to call repeatedly. */
-  indexFile(file: TFile): void {
+  indexFile(file: NoteRef): void {
     // Remove any stale keys from a previous version of this file first,
     // so a frontmatter edit (e.g. adding an ORCID) is always reflected correctly.
     this.removeFile(file);
+    if (this.ignoredFolder && file.path.startsWith(`${this.ignoredFolder}/`)) return;
 
-    const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache?.frontmatter) return;
-    const fm = cache.frontmatter;
-    const type: string = fm["type"] ?? "";
+    const fm = this.vault.frontmatter(file.path);
+    if (!fm) return;
+    const type: string = fm[PROP.type] ?? "";
     const keys: FileKeys = {};
 
-    if (type === "Person") {
-      const given: string = fm["first_name"] ?? "";
-      const family: string = fm["last_name"] ?? "";
-      const orcid: string | undefined = fm["ORCiD"] ?? undefined;
+    if (type === TYPES.person) {
+      const given: string = fm[PROP.firstName] ?? "";
+      const family: string = fm[PROP.lastName] ?? "";
+      const orcid: string | undefined = fm[PROP.orcid] ?? undefined;
 
       if (orcid) {
         keys.orcid = normOrcid(orcid);
@@ -106,9 +108,9 @@ export class VaultIndex {
       }
     }
 
-    if (type === "Article" || type === "Book") {
-      const doi: string | undefined = fm["doi"];
-      const arxiv: string | undefined = fm["arxiv_id"];
+    if (type === TYPES.article || type === TYPES.book) {
+      const doi: string | undefined = fm[PROP.doi];
+      const arxiv: string | undefined = fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : undefined;
       if (doi) {
         keys.doi = normDoi(doi);
         this.doiIndex.set(keys.doi, file);
@@ -117,14 +119,23 @@ export class VaultIndex {
         keys.arxiv = arxiv.trim();
         this.arxivIndex.set(keys.arxiv, file);
       }
+      const citeKey = citekeyOf(fm[PROP.bibtex]);
+      if (citeKey) {
+        keys.citeKey = citeKey;
+        this.citeKeys.add(citeKey);
+      }
     }
 
-    if (type === "Journal") {
-      const fullName: string = fm["full_name"] ?? file.basename;
-      keys.journalKeys = [normJournal(fullName)];
+    if (type === TYPES.journal) {
+      keys.journalKeys = [normJournal(file.basename)];
       this.journalIndex.set(keys.journalKeys[0], file);
+      const abbreviation: unknown = fm[PROP.abbreviation];
+      if (typeof abbreviation === "string" && abbreviation.trim()) {
+        keys.journalKeys.push(normJournal(abbreviation));
+        this.journalIndex.set(normJournal(abbreviation), file);
+      }
 
-      const aliases: unknown = fm["aliases"];
+      const aliases: unknown = fm[PROP.aliases] ?? fm["aliases"];
       const aliasList: string[] = Array.isArray(aliases)
         ? aliases.map(String)
         : typeof aliases === "string"
@@ -141,34 +152,29 @@ export class VaultIndex {
   }
 
   /** Remove a file from all indices. O(1) via the reverse fileKeysIndex. */
-  removeFile(file: TFile): void {
+  removeFile(file: NoteRef): void {
     const keys = this.fileKeysIndex.get(file.path);
     if (!keys) return;
 
     if (keys.orcid) this.orcidIndex.delete(keys.orcid);
     if (keys.fullName) this.fullNameIndex.delete(keys.fullName);
     if (keys.initKey) {
-      const arr = (this.initialIndex.get(keys.initKey) ?? []).filter((f) => f !== file);
+      const arr = (this.initialIndex.get(keys.initKey) ?? []).filter((f) => f.path !== file.path);
       if (arr.length) this.initialIndex.set(keys.initKey, arr);
       else this.initialIndex.delete(keys.initKey);
     }
     if (keys.doi) this.doiIndex.delete(keys.doi);
     if (keys.arxiv) this.arxivIndex.delete(keys.arxiv);
+    if (keys.citeKey) this.citeKeys.delete(keys.citeKey);
     for (const k of keys.journalKeys ?? []) this.journalIndex.delete(k);
 
     this.fileKeysIndex.delete(file.path);
   }
 
-  /**
-   * Update the reverse index after a file rename. O(1).
-   * Forward indices (orcidIndex, fullNameIndex, etc.) hold TFile references which
-   * Obsidian mutates in place on rename, so they stay valid automatically.
-   */
-  renameFile(oldPath: string, file: TFile): void {
-    const keys = this.fileKeysIndex.get(oldPath);
-    if (!keys) return;
-    this.fileKeysIndex.delete(oldPath);
-    this.fileKeysIndex.set(file.path, keys);
+  /** Re-indexes a renamed note under its new path. */
+  renameFile(oldPath: string, file: NoteRef): void {
+    this.removeFile({ path: oldPath, basename: file.basename });
+    this.indexFile(file);
   }
 
   // --------------------------------------------------------------------------
@@ -179,7 +185,7 @@ export class VaultIndex {
    * True when both sides carry an ORCID and they differ — confirmed different
    * people, so the candidate must not be offered as a match.
    */
-  private orcidRulesOut(candidate: TFile, incomingOrcid: string): boolean {
+  private orcidRulesOut(candidate: NoteRef, incomingOrcid: string): boolean {
     if (!incomingOrcid) return false;
     const candidateOrcid = this.fileKeysIndex.get(candidate.path)?.orcid;
     return Boolean(candidateOrcid) && candidateOrcid !== incomingOrcid;
@@ -203,7 +209,7 @@ export class VaultIndex {
     const byFull = this.fullNameIndex.get(fullKey);
     if (byFull && !this.orcidRulesOut(byFull, incomingOrcid)) {
       // At least one ORCID is unknown; can't auto-confirm identity.
-      return { kind: "partial", file: byFull, reason: "full name match – ORCID unconfirmed" };
+      return { kind: "partial", file: byFull, match: "fullName", reason: "full name match – ORCID unconfirmed" };
     }
 
     // 3. Abbreviated given name on either side → compare initial + family.
@@ -217,6 +223,7 @@ export class VaultIndex {
       return {
         kind: "partial",
         file: byInitial[0],
+        match: "initial",
         reason: `abbreviated first name matches "${byInitial[0].basename}"`,
       };
     }
@@ -225,6 +232,7 @@ export class VaultIndex {
       return {
         kind: "partial",
         file: byInitial[0],
+        match: "initial",
         reason: `${byInitial.length} candidates with initial "${initialOf(given)} ${family}"`,
       };
     }

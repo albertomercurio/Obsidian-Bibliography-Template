@@ -1,9 +1,13 @@
-import { requestUrl } from "obsidian";
+import type { Http } from "./ports";
 import type { AuthorRaw, PaperMetadata } from "./types";
 import { CrossrefService } from "./CrossrefService";
 
 export class ArxivService {
-  private crossref = new CrossrefService();
+  private crossref: CrossrefService;
+
+  constructor(private http: Http) {
+    this.crossref = new CrossrefService(http);
+  }
 
   async fetchByArxivId(rawId: string): Promise<PaperMetadata> {
     // Normalise: strip "arXiv:" prefix and version suffix
@@ -24,7 +28,7 @@ export class ArxivService {
 
   private async fetchSemanticScholar(id: string): Promise<PaperMetadata> {
     const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${id}?fields=title,year,authors,externalIds,publicationVenue,journal,abstract`;
-    const response = await requestUrl({ url, throw: false });
+    const response = await this.http({ url });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Semantic Scholar: ${response.status}`);
@@ -70,7 +74,7 @@ export class ArxivService {
 
   private async fetchArxivAtom(id: string): Promise<PaperMetadata> {
     const feedUrl = `https://export.arxiv.org/api/query?id_list=${id}`;
-    const feedResp = await requestUrl({ url: feedUrl, throw: false });
+    const feedResp = await this.http({ url: feedUrl });
     if (feedResp.status < 200 || feedResp.status >= 300) {
       throw new Error(
         `arXiv returned ${feedResp.status} for ID "${id}". Check that the arXiv ID is correct.`

@@ -1,0 +1,61 @@
+{
+ "_comment": "Note written as Obsidian writes them: every case must keep this layout and read back the same.",
+ "cases": [
+  {
+   "meta": {
+    "Type": "Person",
+    "First Name": "Carlos",
+    "Last Name": "Sánchez Muñoz",
+    "ORCID": null,
+    "Email": [],
+    "Affiliations": [
+     "[[IFF-CSIC]]"
+    ],
+    "Relationship": [
+     "Collaborator"
+    ]
+   },
+   "yaml": "---\nType: Person\nFirst Name: Carlos\nLast Name: Sánchez Muñoz\nORCID:\nEmail: []\nAffiliations:\n  - \"[[IFF-CSIC]]\"\nRelationship:\n  - Collaborator\n---\n"
+  },
+  {
+   "meta": {
+    "Type": "Article",
+    "Title": "QuantumToolbox.jl: An efficient Julia framework for simulating open quantum systems",
+    "Authors": [
+     "[[Alberto Mercurio]]",
+     "[[Yi-Te Huang]]"
+    ],
+    "Journal": "[[Quantum]]",
+    "Year": 2025,
+    "DOI": "10.22331/q-2025-01-14-1580",
+    "arXiv": "2504.21440",
+    "PDF": null,
+    "Read": false,
+    "Topics": null,
+    "BibTeX": "@article{Mercurio2025QuantumtoolboxJlEfficient,\n  author = {Mercurio, Alberto and Macr\\`{i}, Vincenzo},\n  title = {{QuantumToolbox.jl: An efficient Julia framework}},\n  journal = {Quantum},\n  year = {2025}\n}"
+   },
+   "yaml": "---\nType: Article\nTitle: \"QuantumToolbox.jl: An efficient Julia framework for simulating open quantum systems\"\nAuthors:\n  - \"[[Alberto Mercurio]]\"\n  - \"[[Yi-Te Huang]]\"\nJournal: \"[[Quantum]]\"\nYear: 2025\nDOI: 10.22331/q-2025-01-14-1580\narXiv: \"2504.21440\"\nPDF:\nRead: false\nTopics:\nBibTeX: |-\n  @article{Mercurio2025QuantumtoolboxJlEfficient,\n    author = {Mercurio, Alberto and Macr\\`{i}, Vincenzo},\n    title = {{QuantumToolbox.jl: An efficient Julia framework}},\n    journal = {Quantum},\n    year = {2025}\n  }\n---\n"
+  },
+  {
+   "meta": {
+    "Type": "Project",
+    "Kind": "Grant",
+    "Status": "Drafting",
+    "Reference": "24_1084",
+    "Amount": 12000.5,
+    "Start": "2026-10-26",
+    "Currency": "CHF",
+    "Tags": [
+     "experiment",
+     "#odd"
+    ],
+    "Programme": "yes",
+    "Funder": "[[Unitary Fund]]",
+    "Note": "",
+    "Website": "https://example.org/a#b",
+    "Code": "0000-0001-7814-1936"
+   },
+   "yaml": "---\nType: Project\nKind: Grant\nStatus: Drafting\nReference: 24_1084\nAmount: 12000.5\nStart: 2026-10-26\nCurrency: CHF\nTags:\n  - experiment\n  - \"#odd\"\nProgramme: yes\nFunder: \"[[Unitary Fund]]\"\nNote: \"\"\nWebsite: https://example.org/a#b\nCode: 0000-0001-7814-1936\n---\n"
+  }
+ ]
+}
