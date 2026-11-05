@@ -59,3 +59,26 @@ export function isAbbreviationOf(short: string, long: string): boolean {
   // Dropping trailing given names ("A." for "Alberto Carlo") also counts.
   return abbreviated || s.length < l.length;
 }
+
+const nameWords = (s: string) => nameTokens(s.replace(/-/g, " "));
+
+/**
+ * True when two writings of given names can be the same person, as far as both
+ * say: "J. M." and "Jay Michael", "Y.-T." and "Yi-Te", "Jay" and "Jay M.".
+ */
+export function sameGivenNames(a: string, b: string): boolean {
+  const x = nameWords(a);
+  const y = nameWords(b);
+  return x.every((word, i) => {
+    const other = y[i];
+    return other === undefined || word === other || (word.length === 1 && word === other[0]) || (other.length === 1 && other === word[0]);
+  });
+}
+
+/** True for the same family name, also when a source keeps only its last part: "Frisk Kockum" and "Kockum". */
+export function sameFamilyName(a: string, b: string): boolean {
+  const x = nameWords(a);
+  const y = nameWords(b);
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.length > 0 && short.every((word, i) => word === long[long.length - short.length + i]);
+}

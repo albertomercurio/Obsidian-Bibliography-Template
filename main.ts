@@ -135,13 +135,13 @@ export default class ResearchImporterPlugin extends Plugin {
       new Notice(`✅ "${file.basename}" matches its source.`, 5000);
       return;
     }
-    if (!result.repair) {
+    if (!result.restore) {
       new Notice(result.issues.join("\n"), 8000);
       return;
     }
     const lines = [...result.issues, ...result.creates.map((c) => `Will create ${c}`)];
     if (await new ConfirmModal(this.app, `Differences in "${file.basename}"`, lines, "Restore from source").ask()) {
-      await result.repair();
+      await result.restore();
       new Notice(`✅ Restored "${file.basename}" from its source.`, 5000);
     }
   }
@@ -174,10 +174,13 @@ export default class ResearchImporterPlugin extends Plugin {
       new Notice(`✅ ${files.length} references match their sources.`, 5000);
       return;
     }
-    const lines = different.map((result) => `${result.file.basename}: ${result.issues.join("; ")}`);
-    if (await new ConfirmModal(this.app, `Differences in ${different.length} references`, lines, "Restore from sources").ask()) {
-      for (const result of different) await result.repair?.();
-      new Notice(`✅ Restored ${different.length} references from their sources.`, 5000);
+    const incomplete = different.filter((result) => result.complete);
+    const lines = incomplete.map((result) => `${result.file.basename}: ${result.missing.join("; ")}`);
+    const review = different.filter((result) => result.conflicts.length).map((result) => `${result.file.basename}: ${result.conflicts.join("; ")}`);
+    const modal = new ConfirmModal(this.app, `${different.length} references differ from their sources`, lines, incomplete.length ? "Add what is missing" : null, review);
+    if (await modal.ask()) {
+      for (const result of incomplete) await result.complete!();
+      new Notice(`✅ Completed ${incomplete.length} references from their sources.`, 5000);
     }
   }
 
