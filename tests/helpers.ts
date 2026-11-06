@@ -1,13 +1,17 @@
 // What several tests share: temporary vaults and a canned Crossref record, so
 // imports take the real path without the network.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Http } from "../src/ports";
 
+// The vaults of a test file live in one folder, removed when the file is done.
+const folder = mkdtempSync(join(tmpdir(), "research-importer-tests-"));
+process.on("exit", () => rmSync(folder, { recursive: true, force: true }));
+
 /** A temporary vault with these files, by path. */
 export function writeVault(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "research-importer-"));
+  const root = mkdtempSync(join(folder, "vault-"));
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
