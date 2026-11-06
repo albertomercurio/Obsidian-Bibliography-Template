@@ -156,13 +156,22 @@ export default class ResearchImporterPlugin extends Plugin {
         id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper", required: true },
         arxiv: { value: "<id>", description: "arXiv id of its preprint, when id is the DOI of the published version" },
         topics: { value: "<names>", description: "Topic notes to link, separated by commas" },
+        same: { value: "<names>", description: "Authors that are the person already in the vault, named as the preview names them, separated by commas" },
+        ask: { description: "Ask about uncertain authors in Obsidian's windows, as the palette does; with apply, it imports as the palette does" },
         apply: { description: "Write the notes" },
       },
       async (params) => {
         const id = value(params, "id");
         if (!id) throw new Error("name the paper: id=<DOI|arXiv>");
-        const topics = value(params, "topics")?.split(",").map((name) => name.trim()).filter(Boolean);
-        return addCommand(host(), { id, topics, arxiv: value(params, "arxiv"), apply: on(params, "apply") });
+        const list = (name: string) => value(params, name)?.split(",").map((item) => item.trim()).filter(Boolean);
+        return addCommand(host(), {
+          id,
+          topics: list("topics"),
+          arxiv: value(params, "arxiv"),
+          same: list("same"),
+          ask: on(params, "ask") ? new ObsidianUi(this.app) : undefined,
+          apply: on(params, "apply"),
+        });
       }
     );
     cli(

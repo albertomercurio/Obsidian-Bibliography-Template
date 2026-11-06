@@ -2,16 +2,17 @@
 // The commands of Obsidian's command line, `research-importer:<name>`: what
 // they do and the text they print, for people and agents. Commands that write
 // show a preview and write only with `apply`; they answer the questions of an
-// import without asking (AutoUi), and with `apply` add what they wrote to the
-// log note of the settings, when there is one. main.ts registers them; the
-// tests run them in Node.
+// import without asking (AutoUi), unless told which authors are the same person
+// (`same`) or to ask in the plugin's windows (`ask`); with `apply` they add what
+// they wrote to the log note of the settings, when there is one. main.ts
+// registers them; the tests run them in Node.
 // ---------------------------------------------------------------------------
 
 import { AutoUi } from "./AutoUi";
 import { allReferences, bibliography, referencesLinkedTo } from "./BibliographyExport";
 import { ImportService } from "./ImportService";
 import { NoteCreator } from "./NoteCreator";
-import type { Http, NoteRef, VaultPort } from "./ports";
+import type { Http, NoteRef, Ui, VaultPort } from "./ports";
 import { ReferenceCheck } from "./ReferenceCheck";
 import { lintReferences, lintReport } from "./ReferenceLint";
 import { citekeyOf, localDate, PROP, provenanceOf } from "./schema";
@@ -34,11 +35,10 @@ export interface NoteQuery {
   path?: string;
 }
 
-function session(host: CommandHost, apply: boolean, say: (line: string) => void) {
-  // ORCID name search asks questions an unattended run cannot answer well.
-  const settings: PluginSettings = { ...host.settings, skipOrcidSearch: true };
+function session(host: CommandHost, apply: boolean, say: (line: string) => void, ui = new AutoUi(say, apply)) {
+  // ORCID name search asks questions only a person can answer: only when they are asked.
+  const settings: PluginSettings = { ...host.settings, skipOrcidSearch: ui.asks ? host.settings.skipOrcidSearch : true };
   const vault = new StagedVault(host.vault, host.yaml, apply);
-  const ui = new AutoUi(say, apply);
   const index = new VaultIndex(vault, settings.templatesFolder);
   index.build();
   const creator = new NoteCreator(vault, settings, ui, index);
@@ -86,13 +86,17 @@ export interface AddOptions {
   topics?: string[];
   /** arXiv id of the preprint, when `id` is the DOI of the published version. */
   arxiv?: string;
+  /** Authors that are the person already in the vault, named as the preview names them. */
+  same?: string[];
+  /** Asks the questions of the import instead of answering them: the plugin's windows. */
+  ask?: Ui;
   apply: boolean;
 }
 
 export async function addCommand(host: CommandHost, options: AddOptions): Promise<string> {
   const out: string[] = [];
   const say = (...lines: string[]) => out.push(...lines);
-  const { vault, ui, importer } = session(host, options.apply, say);
+  const { vault, ui, importer } = session(host, options.apply, say, new AutoUi(say, options.apply, { same: options.same, ask: options.ask }));
   const topics = (options.topics ?? []).map((name) => {
     const note = vault.resolveLink(name, "");
     if (!note) throw new Error(`No note named "${name}" to link as a topic`);
@@ -100,6 +104,7 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
   });
   const file = await importer.run(options.id, { topics, arxivId: options.arxiv });
   for (const decision of ui.decisions) say(`  · ${decision}`);
+  for (const name of ui.unusedSame) say(`  ! same="${name}": no question about this author; name them as the preview does, before the colon`);
   if (!file) return out.join("\n");
   for (const change of vault.changes) say(`${options.apply ? "+" : "?"} ${change.path}  (${change.action})`);
   if (!options.apply) {
