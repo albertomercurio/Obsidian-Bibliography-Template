@@ -1,13 +1,16 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin, TFile, type CliData, type CliFlags } from "obsidian";
 import { DEFAULT_SETTINGS, ResearchImporterSettingTab } from "./src/obsidian/settings";
 import type { PluginSettings } from "./src/types";
 import { VaultIndex } from "./src/VaultIndex";
 import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ReferenceCheck, type CheckResult } from "./src/ReferenceCheck";
+import { lintReferences } from "./src/ReferenceLint";
+import { addCommand, checkCommand, type CommandHost, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
 import { ImportModal } from "./src/obsidian/ImportModal";
 import { ConfirmModal } from "./src/obsidian/ConfirmModal";
-import { obsidianHttp, ObsidianUi, ObsidianVault, ref } from "./src/obsidian/ObsidianHost";
+import { LintModal } from "./src/obsidian/LintModal";
+import { obsidianHttp, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
 import { generateBibtex } from "./src/BibtexGenerator";
 import { allReferences, bibliography, referencesLinkedTo } from "./src/BibliographyExport";
 import { bibtexFields, citekeyOf, PROP, TYPES } from "./src/schema";
@@ -90,6 +93,14 @@ export default class ResearchImporterPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "lint-references",
+      name: "Check all references offline: BibTeX and duplicates",
+      callback: () => {
+        this.lintAllReferences().catch((err) => this.fail("Check", err));
+      },
+    });
+
+    this.addCommand({
       id: "copy-all-bibtex",
       name: "Copy the BibTeX of all references",
       callback: () => {
@@ -113,6 +124,78 @@ export default class ResearchImporterPlugin extends Plugin {
     });
 
     this.addSettingTab(new ResearchImporterSettingTab(this.app, this));
+    this.registerCli();
+  }
+
+  /** Commands of Obsidian's command line: `obsidian-cli research-importer:<name> key=value`. */
+  private registerCli(): void {
+    if (typeof this.registerCliHandler !== "function") return; // Obsidian before 1.12.2
+    // A command may start Obsidian: wait for the metadata, as the palette's index does.
+    const ready = () => new Promise<void>((resolve) => this.app.workspace.onLayoutReady(resolve));
+    const cli = (name: string, description: string, flags: CliFlags | null, handler: (params: CliData) => Promise<string>) =>
+      this.registerCliHandler(`research-importer:${name}`, description, flags, async (params) => {
+        try {
+          await ready();
+          return await handler(params);
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : err}`;
+        }
+      });
+    const host = (): CommandHost => ({ vault: this.vaultPort, http: obsidianHttp, settings: this.settings, yaml: obsidianYaml });
+    const on = (params: CliData, name: string) => params[name] === "true";
+    const value = (params: CliData, name: string): string | undefined => {
+      if (params[name] === "true") throw new Error(`${name} needs a value: ${name}=…`);
+      return params[name]?.trim() || undefined;
+    };
+    const note = (params: CliData): NoteQuery => ({ file: value(params, "file"), path: value(params, "path") });
+
+    cli(
+      "add",
+      "Import a paper from its DOI or arXiv id, with its authors and journal; preview unless apply",
+      {
+        id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper", required: true },
+        arxiv: { value: "<id>", description: "arXiv id of its preprint, when id is the DOI of the published version" },
+        topics: { value: "<names>", description: "Topic notes to link, separated by commas" },
+        apply: { description: "Write the notes" },
+      },
+      async (params) => {
+        const id = value(params, "id");
+        if (!id) throw new Error("name the paper: id=<DOI|arXiv>");
+        const topics = value(params, "topics")?.split(",").map((name) => name.trim()).filter(Boolean);
+        return addCommand(host(), { id, topics, arxiv: value(params, "arxiv"), apply: on(params, "apply") });
+      }
+    );
+    cli(
+      "check",
+      "Compare references with their source (Crossref, arXiv); writes only with repair or restore, and apply",
+      {
+        file: { value: "<name>", description: "Only this reference, by name (default: all of them)" },
+        path: { value: "<path>", description: "Only the reference at this path" },
+        repair: { description: "Add what notes are missing, where the record is surely the same work; creates no notes" },
+        restore: { description: "Make the named note say what the source says, which can be wrong too" },
+        apply: { description: "Write the changes" },
+      },
+      async (params) =>
+        checkCommand(host(), { note: note(params), repair: on(params, "repair"), restore: on(params, "restore"), apply: on(params, "apply") })
+    );
+    cli(
+      "export",
+      "Print the BibTeX of all references, or of those linked to a note; writes nothing",
+      {
+        file: { value: "<name>", description: "Only the references linked to this note: cited by it, or naming it as author, topic or journal" },
+        path: { value: "<path>", description: "The same, naming the note by its path" },
+      },
+      async (params) => exportCommand(host(), { note: note(params) })
+    );
+    cli(
+      "lint",
+      "Check references without the network: each against its own BibTeX, and duplicates; writes nothing",
+      {
+        all: { description: "Also list the notices" },
+        format: { value: "text|json", description: "Output format (default: text)" },
+      },
+      async (params) => lintCommand(host(), { all: on(params, "all"), json: value(params, "format") === "json" })
+    );
   }
 
   async loadSettings(): Promise<void> {
@@ -162,6 +245,15 @@ export default class ResearchImporterPlugin extends Plugin {
     await navigator.clipboard.writeText(text);
     const leftOut = skipped.length ? `, ${skipped.length} left out` : "";
     new Notice(`✅ Copied ${notes.length - skipped.length} BibTeX entries${leftOut}.`, 5000);
+  }
+
+  private async lintAllReferences(): Promise<void> {
+    const result = await lintReferences(this.vaultPort, this.settings);
+    if (!result.issues.length) {
+      new Notice(`✅ ${result.checked} references: each agrees with its BibTeX, and none is a duplicate.`, 5000);
+      return;
+    }
+    new LintModal(this.app, result).open();
   }
 
   private async checkAllReferences(): Promise<void> {

@@ -1,22 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { allReferences, bibliography, referencesLinkedTo } from "../src/BibliographyExport";
 import { NodeVault } from "../src/node/NodeHost";
+import { writeVault } from "./helpers";
 
 const entry = (key: string) => `@article{${key},\n  title = {{Test}},\n  year = 2024,\n}`;
 const bibtex = (key: string) => `BibTeX: |-\n${entry(key).split("\n").map((line) => `  ${line}`).join("\n")}`;
 
-function vaultOf(files: Record<string, string>): NodeVault {
-  const root = mkdtempSync(join(tmpdir(), "lit-export-"));
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), text);
-  }
-  return new NodeVault(root, false);
-}
+const vaultOf = (files: Record<string, string>) => new NodeVault(writeVault(files));
 
 const vault = vaultOf({
   "People/Mario Rossi.md": "---\nType: Person\n---\n",

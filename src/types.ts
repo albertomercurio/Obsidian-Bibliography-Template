@@ -11,6 +11,8 @@ export interface PluginSettings {
   templatesFolder: string;
   skipOrcidSearch: boolean;
   maxAuthors: number;
+  /** Optional note where commands of the command line, run with `apply`, add what they wrote. */
+  logFile: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -21,6 +23,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   templatesFolder: "",
   skipOrcidSearch: false,
   maxAuthors: 25,
+  logFile: "",
 };
 
 // Normalised metadata returned by any fetch service

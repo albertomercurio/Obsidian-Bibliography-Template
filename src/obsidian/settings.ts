@@ -36,6 +36,16 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     );
 
     new Setting(containerEl)
+      .setName("Log note")
+      .setDesc("Optional, e.g. log.md. Commands run from Obsidian's command line with apply add what they wrote to the end of this note.")
+      .addText((text) =>
+        text.setValue(this.plugin.settings.logFile).onChange(async (value) => {
+          this.plugin.settings.logFile = value.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("Skip ORCID name search")
       .setDesc("Do not query ORCID by name for authors without an ORCID (faster imports, fewer questions).")
       .addToggle((toggle) =>

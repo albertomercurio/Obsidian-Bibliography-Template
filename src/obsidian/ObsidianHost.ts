@@ -1,14 +1,17 @@
 // The Obsidian side of the ports: vault access through Obsidian's APIs (which
 // keep links up to date on rename) and questions through modals.
 
-import { App, normalizePath, Notice, requestUrl, TFile } from "obsidian";
+import { App, normalizePath, Notice, parseYaml, requestUrl, stringifyYaml, TFile } from "obsidian";
 import type { DisambiguationData, DisambiguationResult, Frontmatter, Http, NoteRef, Ui, VaultPort } from "../ports";
+import type { YamlCodec } from "../StagedVault";
 import { AuthorOverflowModal } from "./AuthorOverflowModal";
 import { DisambiguationModal } from "./DisambiguationModal";
 
 export function ref(file: TFile): NoteRef {
   return { path: file.path, basename: file.basename };
 }
+
+export const obsidianYaml: YamlCodec = { parse: parseYaml, stringify: stringifyYaml };
 
 export const obsidianHttp: Http = async ({ url, headers }) => {
   const response = await requestUrl({ url, headers, throw: false });

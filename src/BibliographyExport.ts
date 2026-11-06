@@ -6,7 +6,8 @@ import type { NoteRef, VaultPort } from "./ports";
 import { citekeyOf, PROP, TYPES } from "./schema";
 
 const WIKILINK = /\[\[([^\]|#\n]+)/g;
-const linksIn = (text: string) => [...text.matchAll(WIKILINK)].map((match) => match[1].trim());
+/** The targets of the wikilinks in a text, without `#heading` and `|alias`. */
+export const linksIn = (text: string) => [...text.matchAll(WIKILINK)].map((match) => match[1].trim());
 
 /** Articles and books of the vault, without the templates. */
 export function allReferences(vault: VaultPort, templatesFolder: string): NoteRef[] {
