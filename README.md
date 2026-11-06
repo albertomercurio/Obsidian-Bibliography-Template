@@ -23,14 +23,21 @@ Notes use the properties `Type`, `Title`, `Authors`, `Journal`, `Year`, `DOI`, `
 With Obsidian 1.12.2 or later the commands are also in Obsidian's command line, for scripts and agents; the app must be open. Commands that write show a preview and write only with `apply`:
 
 ```sh
-obsidian-cli research-importer:add id=<DOI|arXiv> [arxiv=<id>] [topics="A, B"] [apply]
+obsidian-cli research-importer:add id=<DOI|arXiv> [arxiv=<id>] [topics="A, B"] [same="A, B"] [ask] [apply]
 obsidian-cli research-importer:check [file=<name>|path=<path>] [repair] [apply]   # repair adds what is missing
 obsidian-cli research-importer:check file=<name> restore [apply]                  # overwrites one note with the source
 obsidian-cli research-importer:export [file=<name>|path=<path>] > refs.bib          # prints BibTeX, writes nothing
 obsidian-cli research-importer:lint [all] [format=json]                           # the offline check
 ```
 
-`file=` finds a note as a wikilink does, `path=` by its exact path. `add` answers the import's questions on its own: an author with the same full name is the existing note, any other likely match becomes a new note, and both are listed. `export` lists what it leaves out (no entry, a citation key already used) as `%` comments before the entries. With a log note in the settings, `add` and `check` add what they wrote to it, with `apply`.
+`file=` finds a note as a wikilink does, `path=` by its exact path.
+
+`add` answers the import's questions on its own, and lists each answer: an author with the same full name is the existing note (it only gains what it lacks, such as an ORCID); any other likely match, such as an initial for a first name, becomes a new note. Two options change that:
+
+- `same="Vincenzo Macrì"`: these authors, named as the preview names them, are the person already in the vault. For agents: show the preview to the user, then run again with their answer.
+- `ask`: the questions open in Obsidian's windows, merge included, while the command waits; ORCID name search follows the settings. `ask apply` imports as the palette does.
+
+`export` lists what it leaves out (no entry, a citation key already used) as `%` comments before the entries. With a log note in the settings, `add` and `check` add what they wrote to it, with `apply`.
 
 ## Development
 

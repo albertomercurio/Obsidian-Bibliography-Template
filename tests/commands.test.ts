@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { addCommand, checkCommand, type CommandHost, exportCommand, lintCommand } from "../src/CommandLine";
 import { NodeVault } from "../src/node/NodeHost";
 import { nodeYaml, parseFrontmatter, splitNote } from "../src/node/frontmatter";
+import type { DisambiguationData, Ui } from "../src/ports";
 import { DEFAULT_SETTINGS } from "../src/types";
 import { ARTICLE, DOI, http, sampleVault, writeVault } from "./helpers";
 
@@ -102,4 +103,27 @@ test("lint prints the offline check as text or JSON", async () => {
   assert.match(await lintCommand(host(root)), /^error {3}bibtex-mismatch {4}Articles\/A\.md:4 {2}DOI in the BibTeX \(10\.1\/b\) differs from the property \(10\.1\/a\)/);
   const json = JSON.parse(await lintCommand(host(root), { json: true }));
   assert.deepEqual(json.map((issue: { code: string }) => issue.code), ["bibtex-mismatch"]);
+});
+
+test("an uncertain author: a new note by default, the existing one with same=, or the answer given with ask", async () => {
+  const root = sampleVault();
+  writeFileSync(join(root, "People/V. Macrì.md"), "---\nType: Person\nFirst Name: V.\nLast Name: Macrì\n---\n");
+
+  const preview = await addCommand(host(root), { id: DOI, apply: false });
+  assert.match(preview, /^ {2}· Vincenzo Macrì: may be the same person as "V\. Macrì" \(.+\), creating a new note; same="Vincenzo Macrì" links the existing one$/m);
+  assert.match(preview, /^\? People\/Vincenzo Macrì\.md {2}\(create\)$/m);
+
+  const asked: DisambiguationData[] = [];
+  const ask: Ui = { notice() {}, async confirmOverflow() { return true; }, async disambiguate(data) { asked.push(data); return { choice: "skip" }; }, open() {} };
+  const answered = await addCommand(host(root), { id: DOI, ask, apply: false });
+  assert.deepEqual(asked.map((data) => `${data.incoming.label} → ${data.candidateBasename}`), ["Vincenzo Macrì → V. Macrì"]);
+  assert.match(answered, /^ {2}· Vincenzo Macrì: left without a note \(your answer\)$/m);
+  assert.doesNotMatch(answered, /People\/Vincenzo Macrì\.md/);
+
+  const same = await addCommand(host(root), { id: DOI, same: ["vincenzo macri", "Nobody"], apply: true });
+  assert.match(same, /^ {2}· Vincenzo Macrì: the same person as \[\[V\. Macrì\]\] \(same=\)$/m);
+  assert.match(same, /^ {2}! same="Nobody": no question about this author/m);
+  assert.equal(existsSync(join(root, "People/Vincenzo Macrì.md")), false);
+  const fm = parseFrontmatter(splitNote(readFileSync(join(root, ARTICLE), "utf8")).yaml)!;
+  assert.equal(fm.Authors[0], "[[V. Macrì]]");
 });
