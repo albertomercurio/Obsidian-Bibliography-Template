@@ -57,6 +57,15 @@ export const DEFAULT_TEMPLATES: Record<string, NoteTemplate> = {
   [TYPES.journal]: { keys: [PROP.abbreviation], body: "## Notes\n" },
 };
 
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+
+/** Splits a note into its YAML text (null when absent) and body. */
+export function splitNote(text: string): { yaml: string | null; body: string } {
+  const m = text.match(FRONTMATTER_RE);
+  if (!m) return { yaml: null, body: text };
+  return { yaml: m[1], body: text.slice(m[0].length) };
+}
+
 /** Reads a template file: its top-level property names, in order, and its body. */
 export function parseTemplate(text: string): NoteTemplate {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/);
@@ -125,14 +134,50 @@ export function abstractCallout(abstract: string | undefined, prov: Provenance, 
 // BibTeX values
 // ---------------------------------------------------------------------------
 
-/** Field values of a BibTeX entry (outer braces or quotes removed), keys in lowercase. */
+const ENTRY_HEAD = /@\s*\w+\s*[{(]\s*[^,\s]*\s*,/;
+const FIELD_NAME = /^[a-z][\w:.+-]*$/i;
+
+/**
+ * Field values of a BibTeX entry, keys in lowercase. Reads nested braces, so a
+ * value may span several lines or share a line with others; the outer braces
+ * or quotes are removed and runs of white space become one space.
+ */
 export function bibtexFields(entry: string | undefined): Record<string, string> {
   const fields: Record<string, string> = {};
-  if (!entry) return fields;
-  const re = /^\s*([A-Za-z]+)\s*=\s*(.+?),?\s*$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(entry))) {
-    fields[m[1].toLowerCase()] = m[2].replace(/^[{"]/, "").replace(/[}"]$/, "").trim();
+  const head = entry?.match(ENTRY_HEAD);
+  if (!entry || !head) return fields;
+  const body = entry.slice((head.index ?? 0) + head[0].length);
+  let i = 0;
+  const skip = (chars: string) => {
+    while (i < body.length && chars.includes(body[i])) i++;
+  };
+  while (i < body.length) {
+    skip(" \t\r\n,");
+    if (i >= body.length || body[i] === "}" || body[i] === ")") break;
+    const equals = body.indexOf("=", i);
+    if (equals < 0) break;
+    const name = body.slice(i, equals).trim().toLowerCase();
+    i = equals + 1;
+    skip(" \t\r\n");
+    let value: string;
+    if (body[i] === "{") {
+      const start = i + 1;
+      for (let depth = 0; i < body.length; i++) {
+        if (body[i] === "{") depth++;
+        else if (body[i] === "}" && --depth === 0) break;
+      }
+      value = body.slice(start, i);
+      i++;
+    } else if (body[i] === '"') {
+      const end = body.indexOf('"', i + 1);
+      value = body.slice(i + 1, end < 0 ? body.length : end);
+      i = end < 0 ? body.length : end + 1;
+    } else {
+      const start = i;
+      while (i < body.length && !",})\n".includes(body[i])) i++;
+      value = body.slice(start, i);
+    }
+    if (FIELD_NAME.test(name)) fields[name] = value.replace(/\s+/g, " ").trim();
   }
   return fields;
 }

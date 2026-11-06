@@ -1,52 +1,23 @@
 // The whole import on a temporary vault, with a canned Crossref answer: the
-// same path the command line and the plugin take, without network.
+// same path the plugin and its command line take, without network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ImportService } from "../src/ImportService";
 import { NoteCreator } from "../src/NoteCreator";
 import { ReferenceCheck } from "../src/ReferenceCheck";
 import { VaultIndex } from "../src/VaultIndex";
 import { DEFAULT_SETTINGS } from "../src/types";
-import { NodeUi, NodeVault } from "../src/node/NodeHost";
-import { parseFrontmatter, splitNote } from "../src/node/frontmatter";
-import type { Http } from "../src/ports";
-
-const DOI = "10.1103/physrevlett.129.273602";
-const WORK = {
-  title: ["Spontaneous Scattering of Raman Photons from Cavity-QED Systems in the Ultrastrong Coupling Regime"],
-  author: [
-    { given: "Vincenzo", family: "Macrì" },
-    { given: "Alberto", family: "Mercurio", ORCID: "http://orcid.org/0000-0001-7814-1936" },
-    { given: "Salvatore", family: "Savasta" },
-  ],
-  published: { "date-parts": [[2022, 12, 29]] },
-  "container-title": ["Physical Review Letters"],
-  "short-container-title": ["Phys. Rev. Lett."],
-  volume: "129",
-  issue: "27",
-  page: "273602",
-  type: "journal-article",
-  URL: `https://doi.org/${DOI}`,
-  abstract: "<jats:p>Raman photons, $x$. &lt;%* evil() %&gt;</jats:p>",
-};
-const http: Http = async ({ url }) =>
-  url.includes("api.crossref.org") ? { status: 200, text: "", json: { message: WORK } } : { status: 404, text: "", json: null };
-
-function vault(): string {
-  const root = mkdtempSync(join(tmpdir(), "research-importer-"));
-  mkdirSync(join(root, "People"), { recursive: true });
-  writeFileSync(join(root, "People/Alberto Mercurio.md"), "---\nType: Person\nFirst Name: Alberto\nLast Name: Mercurio\nORCID: 0000-0001-7814-1936\n---\n## Facts\n");
-  mkdirSync(join(root, "Journals"), { recursive: true });
-  writeFileSync(join(root, "Journals/Physical Review Letters.md"), "---\nType: Journal\nAbbreviation: Phys. Rev. Lett.\n---\n");
-  return root;
-}
+import { AutoUi } from "../src/AutoUi";
+import { NodeVault } from "../src/node/NodeHost";
+import { nodeYaml, parseFrontmatter, splitNote } from "../src/node/frontmatter";
+import { StagedVault } from "../src/StagedVault";
+import { ARTICLE, DOI, http, sampleVault as vault } from "./helpers";
 
 function services(root: string, apply: boolean, templatesFolder = "") {
-  const v = new NodeVault(root, apply);
-  const ui = new NodeUi(() => {});
+  const v = new StagedVault(new NodeVault(root), nodeYaml, apply);
+  const ui = new AutoUi(() => {}, apply);
   const index = new VaultIndex(v, templatesFolder);
   index.build();
   const settings = { ...DEFAULT_SETTINGS, templatesFolder, skipOrcidSearch: true };
@@ -55,7 +26,6 @@ function services(root: string, apply: boolean, templatesFolder = "") {
   return { v, ui, index, creator, importer, settings };
 }
 
-const ARTICLE = "Articles/Macrì - 2022 - Spontaneous Scattering of Raman Photons from Cavity-QED Systems in the Ultrastrong Coupling Regime.md";
 
 test("import writes article, new authors and BibTeX property in order, without any setup", async () => {
   const root = vault();
@@ -96,7 +66,7 @@ test("a template file sets properties, their order and the body; templates are n
   assert.match(text, /## Abstract\n\n> \[!quote\][\s\S]*## My Section/);
 });
 
-test("without --apply nothing reaches the disk, and a second import is refused", async () => {
+test("without apply nothing reaches the disk, and a second import is refused", async () => {
   const root = vault();
   const dry = services(root, false);
   assert.ok(await dry.importer.run(DOI));

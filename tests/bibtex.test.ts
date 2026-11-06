@@ -46,4 +46,28 @@ test("signature diff ignores layout and sees content", () => {
   assert.deepEqual(signatureDiff(relaid, canonical), { missing: [], different: [] });
   assert.deepEqual(signatureDiff(canonical.replace("273602", "273603"), canonical).different, ["pages"]);
   assert.deepEqual(signatureDiff(canonical.replace("Nori, Franco and ", ""), canonical).different, ["author"]);
+  assert.deepEqual(signatureDiff(undefined, canonical), { missing: ["entry"], different: [] });
+  assert.deepEqual(signatureDiff("@article{Key,\n}", canonical), { missing: ["entry"], different: [] });
+  assert.deepEqual(signatureDiff("title = {No header}", canonical), { missing: [], different: ["entry"] }, "not an entry: replaced only by a restore");
+});
+
+test("fields are read across lines, with nested braces, quotes and bare values", () => {
+  const entry = `@article{Key,
+  title = {Spontaneous {R}aman
+           Scattering},
+  author = {{Collaboration Name} and M{\\"u}ller, Hans},
+  journal = "Phys. Rev. Lett.", year = 2022,
+  month = jan,
+  pages = {1--10}}`;
+  assert.deepEqual(bibtexFields(entry), {
+    title: "Spontaneous {R}aman Scattering",
+    author: '{Collaboration Name} and M{\\"u}ller, Hans',
+    journal: "Phys. Rev. Lett.",
+    year: "2022",
+    month: "jan",
+    pages: "1--10",
+  });
+  assert.deepEqual(bibtexFields("@book{K, title = {T}, year = 2020}"), { title: "T", year: "2020" });
+  assert.deepEqual(bibtexFields("title = {no header}"), {});
+  assert.deepEqual(bibtexFields(undefined), {});
 });

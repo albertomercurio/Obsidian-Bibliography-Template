@@ -15,7 +15,7 @@ function vaultOf(files: Record<string, string>): NodeVault {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   }
-  return new NodeVault(root, false);
+  return new NodeVault(root);
 }
 
 const vault = vaultOf({

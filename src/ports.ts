@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // Ports: what the core needs from its host.
 //
-// The core (import, BibTeX, note creation) runs in two hosts: the Obsidian
-// plugin (desktop and mobile) and the Node command line. Neither "obsidian" nor
+// The core (import, BibTeX, note creation, checks) runs in two hosts: the
+// Obsidian plugin (desktop and mobile) and Node, for the tests and for checking
+// a vault where Obsidian is not available. Neither "obsidian" nor
 // Node modules are imported by the core; each host implements these interfaces
 // (src/obsidian/, src/node/).
 // ---------------------------------------------------------------------------

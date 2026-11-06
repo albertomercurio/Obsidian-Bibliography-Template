@@ -65,15 +65,31 @@ export function bibtexFamilies(authorField: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function sameFamilies(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((family, i) => family.endsWith(b[i]) || b[i].endsWith(family));
+/** The same family names in the same order; a source may keep only the last part of one ("Frisk Kockum", "Kockum"). */
+export function sameFamilies(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((family, i) => Boolean(family && b[i]) && (family.endsWith(b[i]) || b[i].endsWith(family)));
+}
+
+/** The authors a note links, with their names as the person notes hold them (else as the link writes them). */
+export function linkedAuthors(vault: VaultPort, fm: Frontmatter, sourcePath: string): { link: string; given: string; family: string }[] {
+  const links: unknown[] = Array.isArray(fm[PROP.authors]) ? fm[PROP.authors] : [fm[PROP.authors]];
+  return links.filter((link): link is string => typeof link === "string").map((link) => {
+    const name = link.replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
+    const person = vault.resolveLink(name, sourcePath);
+    const own = person ? vault.frontmatter(person.path) : undefined;
+    const words = name.split(/\s+/);
+    return { link, given: own?.[PROP.firstName] || words.slice(0, -1).join(" "), family: own?.[PROP.lastName] || words[words.length - 1] };
+  });
 }
 
 /** Fields of the canonical entry that the current one lacks, and those whose content differs. */
 export function signatureDiff(current: string | undefined, canonical: string): { missing: string[]; different: string[] } {
   const cur = bibtexFields(current);
   const can = bibtexFields(canonical);
-  if (!current || Object.keys(cur).length === 0) return { missing: ["entry"], different: [] };
+  if (!current || Object.keys(cur).length === 0) {
+    // Text that is not an entry is not missing: only a restore, one note at a time, replaces it.
+    return !current?.trim() || citekeyOf(current) ? { missing: ["entry"], different: [] } : { missing: [], different: ["entry"] };
+  }
   const missing = SIGNATURE_FIELDS.filter((f) => can[f] && !cur[f]);
   const different = SIGNATURE_FIELDS.filter((f) => can[f] && cur[f] && normalized(cur[f]) !== normalized(can[f]));
   if (can.author && !sameFamilies(bibtexFamilies(cur.author), bibtexFamilies(can.author))) different.unshift("author");
@@ -104,18 +120,6 @@ export class ReferenceCheck {
     private importer: ImportService
   ) {}
 
-  /** The authors a note links, with their names as the person notes hold them. */
-  private linkedAuthors(fm: Frontmatter, sourcePath: string): { link: string; given: string; family: string }[] {
-    const links: unknown[] = Array.isArray(fm[PROP.authors]) ? fm[PROP.authors] : [fm[PROP.authors]];
-    return links.filter((link): link is string => typeof link === "string").map((link) => {
-      const name = link.replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
-      const person = this.vault.resolveLink(name, sourcePath);
-      const own = person ? this.vault.frontmatter(person.path) : undefined;
-      const words = name.split(/\s+/);
-      return { link, given: own?.[PROP.firstName] || words.slice(0, -1).join(" "), family: own?.[PROP.lastName] || words[words.length - 1] };
-    });
-  }
-
   async check(file: NoteRef): Promise<CheckResult> {
     const fm: Frontmatter = this.vault.frontmatter(file.path) ?? {};
     const unchecked = (issue: string): CheckResult => ({ file, missing: [], conflicts: [issue], issues: [issue], creates: [] });
@@ -135,7 +139,7 @@ export class ReferenceCheck {
     const linked = max > 0 && metadata.authors.length > max ? metadata.authors.slice(0, 1) : metadata.authors;
     const creates: string[] = [];
     const actions: (() => Promise<unknown>)[] = [];
-    const remaining = this.linkedAuthors(fm, file.path);
+    const remaining = linkedAuthors(this.vault, fm, file.path);
     const authors = linked.map((a) => {
       const same = remaining.findIndex((p) => sameFamilyName(p.family, a.family) && sameGivenNames(p.given, a.given));
       if (same !== -1) return remaining.splice(same, 1)[0].link;

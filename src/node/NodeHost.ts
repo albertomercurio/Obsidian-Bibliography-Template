@@ -1,16 +1,12 @@
-// The Node side of the ports, for the command line: the vault is read from disk, writes are staged in memory and reach the disk only with
-// --apply, so every command can show its plan first. Questions get the answers
-// a careful default gives, written to the output so the user can review them.
+// The Node side of the vault port: the notes of a folder on disk, for the tests
+// and for checking a real vault where Obsidian is not available (VAULT=<folder>
+// npm test, also on GitHub). Writes reach the disk; a preview stands a
+// StagedVault in front, as the command line does in Obsidian.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
-import type { DisambiguationData, DisambiguationResult, Frontmatter, Http, NoteRef, Ui, VaultPort } from "../ports";
+import type { Frontmatter, NoteRef, VaultPort } from "../ports";
 import { parseFrontmatter, renderNote, splitNote } from "./frontmatter";
-
-export interface Change {
-  path: string;
-  action: "create" | "modify";
-}
 
 function nfc(s: string): string {
   return s.normalize("NFC");
@@ -21,12 +17,10 @@ function basenameOf(path: string): string {
 }
 
 export class NodeVault implements VaultPort {
-  /** Planned or applied writes, in order. */
-  readonly changes: Change[] = [];
   private texts = new Map<string, string>();
   private frontmatters = new Map<string, Frontmatter | undefined>();
 
-  constructor(readonly root: string, private apply: boolean) {
+  constructor(readonly root: string) {
     this.scan("");
   }
 
@@ -53,13 +47,10 @@ export class NodeVault implements VaultPort {
     this.frontmatters.set(path, fm);
   }
 
-  private write(path: string, text: string, action: Change["action"]): void {
+  private write(path: string, text: string): void {
     this.store(path, text);
-    if (!this.changes.some((c) => c.path === path)) this.changes.push({ path, action });
-    if (this.apply) {
-      mkdirSync(join(this.root, posix.dirname(path)), { recursive: true });
-      writeFileSync(join(this.root, path), text, "utf8");
-    }
+    mkdirSync(join(this.root, posix.dirname(path)), { recursive: true });
+    writeFileSync(join(this.root, path), text, "utf8");
   }
 
   text(path: string): string | undefined {
@@ -86,13 +77,13 @@ export class NodeVault implements VaultPort {
   }
 
   async ensureFolder(path: string): Promise<void> {
-    if (this.apply && path) mkdirSync(join(this.root, path), { recursive: true });
+    if (path) mkdirSync(join(this.root, path), { recursive: true });
   }
 
   async create(path: string, content: string): Promise<NoteRef> {
     const rel = nfc(path);
     if (this.exists(rel)) throw new Error(`Already exists: ${rel}`);
-    this.write(rel, content, "create");
+    this.write(rel, content);
     return { path: rel, basename: basenameOf(rel) };
   }
 
@@ -103,14 +94,14 @@ export class NodeVault implements VaultPort {
     const fm = structuredClone(parseFrontmatter(yaml) ?? {});
     fn(fm);
     const next = renderNote(fm, body);
-    if (next !== text) this.write(rel, next, this.changes.find((c) => c.path === rel)?.action ?? "modify");
+    if (next !== text) this.write(rel, next);
   }
 
   async process(path: string, fn: (text: string) => string): Promise<void> {
     const rel = nfc(path);
     const text = await this.read(rel);
     const next = fn(text);
-    if (next !== text) this.write(rel, next, this.changes.find((c) => c.path === rel)?.action ?? "modify");
+    if (next !== text) this.write(rel, next);
   }
 
   async rename(): Promise<NoteRef | null> {
@@ -129,47 +120,4 @@ export class NodeVault implements VaultPort {
     const best = hits.find((p) => posix.dirname(p) === dir) ?? hits.sort()[0];
     return { path: best, basename: basenameOf(best) };
   }
-}
-
-export const nodeHttp: Http = async ({ url, headers }) => {
-  const response = await fetch(url, {
-    headers: { "User-Agent": "SecondBrain/0.4 (personal bibliography)", ...headers },
-  });
-  const text = await response.text();
-  let json: any = undefined;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    // Not JSON (arXiv Atom, ORCID search): callers read `text`.
-  }
-  return { status: response.status, text, json };
-};
-
-/** Answers without asking, and says what it chose. */
-export class NodeUi implements Ui {
-  readonly decisions: string[] = [];
-
-  /** `apply` false: a preview, so nothing has been imported yet. */
-  constructor(private log: (line: string) => void, private apply = true) {}
-
-  notice(message: string): void {
-    const text = this.apply ? message : message.replace(/^✅ Imported:/, "Da importare:");
-    this.log(text.replace(/\n/g, " "));
-  }
-
-  async confirmOverflow(total: number, max: number, visible: number): Promise<boolean> {
-    this.decisions.push(`${total} authors (over ${max}): linked only the first${visible > 1 ? ` and the next ones up to ${visible}` : ""}, full list in the BibTeX`);
-    return true;
-  }
-
-  async disambiguate(data: DisambiguationData): Promise<DisambiguationResult> {
-    if (data.match === "fullName") {
-      this.decisions.push(`${data.incoming.label}: same name as [[${data.candidate.label}]], using the existing note`);
-      return { choice: "same" };
-    }
-    this.decisions.push(`${data.incoming.label}: may be the same person as "${data.candidate.label}", creating a new note`);
-    return { choice: "different" };
-  }
-
-  open(): void {}
 }

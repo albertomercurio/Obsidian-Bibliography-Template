@@ -117,3 +117,12 @@
     width: 100%;
   }
 }
+
+/* Offline check: one item per problem, its hint below */
+.research-importer-issues li {
+  margin-bottom: 0.5em;
+}
+
+.research-importer-issues .research-importer-hint {
+  margin-bottom: 0;
+}
