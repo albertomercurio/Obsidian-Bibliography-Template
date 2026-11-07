@@ -169,10 +169,12 @@ export class ReferenceCheck {
           };
         }
       } else {
-        const planned = this.creator.planCreateJournal({ fullName: metadata.journalFull, shortName: metadata.journalShort });
+        const publisher = this.importer.resolvePublisher(metadata.publisher);
+        const planned = this.creator.planCreateJournal({ fullName: metadata.journalFull, shortName: metadata.journalShort, publisherName: publisher?.displayName });
         journal = `[[${planned.basename}]]`;
+        if (publisher?.actions.length) creates.push(`publisher ${publisher.displayName}`);
         creates.push(`journal ${planned.basename}`);
-        actions.push(planned.commit);
+        actions.push(...(publisher?.actions ?? []), planned.commit);
       }
     }
 

@@ -14,7 +14,7 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    const folder = (name: string, desc: string, key: "articlesFolder" | "booksFolder" | "peopleFolder" | "journalsFolder" | "templatesFolder") =>
+    const folder = (name: string, desc: string, key: "articlesFolder" | "booksFolder" | "peopleFolder" | "journalsFolder" | "publishersFolder" | "templatesFolder") =>
       new Setting(containerEl).setName(name).setDesc(desc).addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS[key])
@@ -29,9 +29,10 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     folder("Books folder", "Where book notes are created.", "booksFolder");
     folder("People folder", "Where person notes are created.", "peopleFolder");
     folder("Journals folder", "Where journal notes are created.", "journalsFolder");
+    folder("Publishers folder", "Optional. Where publisher notes are created: books and new journals then link their publisher. Empty: the publisher of a book stays text.", "publishersFolder");
     folder(
       "Templates folder",
-      "Optional. Article.md, Book.md, Person.md and Journal.md in this folder set the properties, their order and the body of new notes.",
+      "Optional. Article.md, Book.md, Person.md, Journal.md and Publisher.md in this folder set the properties, their order and the body of new notes.",
       "templatesFolder"
     );
 

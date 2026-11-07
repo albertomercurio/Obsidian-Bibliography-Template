@@ -31,6 +31,7 @@ interface FileKeys {
   arxiv?: string;
   citeKey?: string;
   journalKeys?: string[];
+  publisherKeys?: string[];
 }
 
 export class VaultIndex {
@@ -51,6 +52,8 @@ export class VaultIndex {
 
   /** Normalised journal key (full name or alias) → file */
   private journalIndex = new Map<string, NoteRef>();
+  /** Normalised publisher key (name or alias) → file */
+  private publisherIndex = new Map<string, NoteRef>();
 
   /**
    * Reverse map: file.path → all keys under which this file is stored.
@@ -68,6 +71,7 @@ export class VaultIndex {
     this.doiIndex.clear();
     this.arxivIndex.clear();
     this.journalIndex.clear();
+    this.publisherIndex.clear();
     this.fileKeysIndex.clear();
 
     for (const file of this.vault.markdownFiles()) {
@@ -135,17 +139,16 @@ export class VaultIndex {
         this.journalIndex.set(normJournal(abbreviation), file);
       }
 
-      const aliases: unknown = fm[PROP.aliases] ?? fm["aliases"];
-      const aliasList: string[] = Array.isArray(aliases)
-        ? aliases.map(String)
-        : typeof aliases === "string"
-        ? [aliases]
-        : [];
-      for (const alias of aliasList) {
+      for (const alias of aliasesOf(fm)) {
         const k = normJournal(alias);
         keys.journalKeys.push(k);
         this.journalIndex.set(k, file);
       }
+    }
+
+    if (type === TYPES.publisher) {
+      keys.publisherKeys = [file.basename, ...aliasesOf(fm)].map(normJournal);
+      for (const k of keys.publisherKeys) this.publisherIndex.set(k, file);
     }
 
     this.fileKeysIndex.set(file.path, keys);
@@ -167,6 +170,7 @@ export class VaultIndex {
     if (keys.arxiv) this.arxivIndex.delete(keys.arxiv);
     if (keys.citeKey) this.citeKeys.delete(keys.citeKey);
     for (const k of keys.journalKeys ?? []) this.journalIndex.delete(k);
+    for (const k of keys.publisherKeys ?? []) this.publisherIndex.delete(k);
 
     this.fileKeysIndex.delete(file.path);
   }
@@ -254,6 +258,16 @@ export class VaultIndex {
     if (file) return { kind: "exact", file };
     return { kind: "none" };
   }
+
+  /** The publisher note with this name or alias, ignoring case, accents and punctuation. */
+  findPublisher(name: string): NoteRef | undefined {
+    return this.publisherIndex.get(normJournal(name));
+  }
+}
+
+function aliasesOf(fm: Record<string, any>): string[] {
+  const aliases: unknown = fm[PROP.aliases] ?? fm["aliases"];
+  return Array.isArray(aliases) ? aliases.map(String) : typeof aliases === "string" ? [aliases] : [];
 }
 
 // ---------------------------------------------------------------------------

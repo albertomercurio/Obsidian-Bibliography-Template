@@ -13,7 +13,8 @@ import { AutoUi } from "../src/AutoUi";
 import { NodeVault } from "../src/node/NodeHost";
 import { nodeYaml, parseFrontmatter, splitNote } from "../src/node/frontmatter";
 import { StagedVault } from "../src/StagedVault";
-import { ARTICLE, DOI, http, sampleVault as vault } from "./helpers";
+import { ARTICLE, DOI, http, sampleVault as vault, WORK, writeVault } from "./helpers";
+import type { Http } from "../src/ports";
 
 function services(root: string, apply: boolean, templatesFolder = "") {
   const v = new StagedVault(new NodeVault(root), nodeYaml, apply);
@@ -148,4 +149,54 @@ test("an author with another name is not taken for the one linked", async () => 
   writeFileSync(path, readFileSync(path, "utf8").replace('"[[Salvatore Savasta]]"', '"[[Mario Savasta]]"'));
   const result = await checkerFor(root).check({ path: ARTICLE, basename: "" });
   assert.ok(result.conflicts.some((i) => i.startsWith("Authors:")));
+});
+
+// Publishers: linked only when the settings name a folder for their notes.
+const BOOK_DOI = "10.1093/acprof:oso/9780199213900.001.0001";
+const BOOK = {
+  title: ["The Theory of Open Quantum Systems"],
+  author: [{ given: "Heinz-Peter", family: "Breuer" }, { given: "Francesco", family: "Petruccione" }],
+  published: { "date-parts": [[2007]] },
+  type: "monograph",
+  ISBN: ["9780199213900"],
+  URL: `https://doi.org/${BOOK_DOI}`,
+};
+const answering = (work: object): Http => async ({ url }) =>
+  url.includes("api.crossref.org") ? { status: 200, text: "", json: { message: work } } : { status: 404, text: "", json: null };
+
+function publisherServices(root: string, record: object, publishersFolder: string) {
+  const v = new StagedVault(new NodeVault(root), nodeYaml, true);
+  const ui = new AutoUi(() => {}, true);
+  const index = new VaultIndex(v, "");
+  index.build();
+  const settings = { ...DEFAULT_SETTINGS, publishersFolder, skipOrcidSearch: true };
+  const creator = new NoteCreator(v, settings, ui, index);
+  return new ImportService(v, ui, answering(record), settings, index, creator);
+}
+const frontmatterOf = (root: string, path: string) => parseFrontmatter(splitNote(readFileSync(join(root, path), "utf8")).yaml)!;
+
+test("with a publishers folder, a book links its publisher, found by name or alias, or a new note", async () => {
+  const root = vault();
+  mkdirSync(join(root, "Publishers"));
+  writeFileSync(join(root, "Publishers/Oxford University Press.md"), "---\nType: Publisher\nAliases:\n  - Oxford University Press (OUP)\n---\n");
+  const book = await publisherServices(root, { ...BOOK, publisher: "Oxford University Press (OUP)" }, "Publishers").run(BOOK_DOI);
+  assert.equal(frontmatterOf(root, book!.path).Publisher, "[[Oxford University Press]]");
+  assert.deepEqual(readdirSync(join(root, "Publishers")), ["Oxford University Press.md"]);
+
+  const other = writeVault({});
+  const second = await publisherServices(other, { ...BOOK, publisher: "Wiley" }, "Publishers").run(BOOK_DOI);
+  assert.equal(frontmatterOf(other, second!.path).Publisher, "[[Wiley]]");
+  assert.equal(frontmatterOf(other, "Publishers/Wiley.md").Type, "Publisher");
+});
+
+test("a new journal links its publisher; without a publishers folder a book's publisher stays text", async () => {
+  const root = writeVault({});
+  await publisherServices(root, { ...WORK, publisher: "American Physical Society (APS)" }, "Publishers").run(DOI);
+  assert.equal(frontmatterOf(root, "Journals/Physical Review Letters.md").Publisher, "[[American Physical Society (APS)]]");
+  assert.equal(frontmatterOf(root, "Publishers/American Physical Society (APS).md").Type, "Publisher");
+
+  const plain = writeVault({});
+  const book = await publisherServices(plain, { ...BOOK, publisher: "Wiley" }, "").run(BOOK_DOI);
+  assert.equal(frontmatterOf(plain, book!.path).Publisher, "Wiley");
+  assert.equal(existsSync(join(plain, "Publishers")), false);
 });

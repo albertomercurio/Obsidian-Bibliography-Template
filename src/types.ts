@@ -7,7 +7,9 @@ export interface PluginSettings {
   booksFolder: string;
   peopleFolder: string;
   journalsFolder: string;
-  /** Optional folder with Article.md, Book.md, Person.md, Journal.md: properties and body of new notes. */
+  /** Where publisher notes are created; empty: the publisher of books stays text and journals get none. */
+  publishersFolder: string;
+  /** Optional folder with Article.md, Book.md, Person.md, Journal.md, Publisher.md: properties and body of new notes. */
   templatesFolder: string;
   skipOrcidSearch: boolean;
   maxAuthors: number;
@@ -20,6 +22,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   booksFolder: "Books",
   peopleFolder: "People",
   journalsFolder: "Journals",
+  publishersFolder: "",
   templatesFolder: "",
   skipOrcidSearch: false,
   maxAuthors: 25,

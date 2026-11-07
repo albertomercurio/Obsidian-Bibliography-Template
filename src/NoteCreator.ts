@@ -58,8 +58,8 @@ export class NoteCreator {
   ) {}
 
   private folderOf(type: string): string {
-    const { articlesFolder, booksFolder, peopleFolder, journalsFolder } = this.settings;
-    return { [TYPES.article]: articlesFolder, [TYPES.book]: booksFolder, [TYPES.person]: peopleFolder, [TYPES.journal]: journalsFolder }[type] ?? "";
+    const { articlesFolder, booksFolder, peopleFolder, journalsFolder, publishersFolder } = this.settings;
+    return { [TYPES.article]: articlesFolder, [TYPES.book]: booksFolder, [TYPES.person]: peopleFolder, [TYPES.journal]: journalsFolder, [TYPES.publisher]: publishersFolder }[type] ?? "";
   }
 
   private async templateOf(type: string): Promise<NoteTemplate> {
@@ -127,7 +127,19 @@ export class NoteCreator {
     return joinPath(dir, `${basename}.md`);
   }
 
-  planCreateJournal(params: { fullName: string; shortName?: string }): PlannedNoteAction<string> {
+  /** A note for a publisher not yet in the vault, named as the source names it. */
+  planCreatePublisher(name: string): PlannedNoteAction<string> {
+    const basename = sanitizeFilename(name, 120);
+    return {
+      basename,
+      commit: async () => {
+        if (!this.vault.exists(joinPath(this.folderOf(TYPES.publisher), `${basename}.md`))) await this.createTyped(TYPES.publisher, basename, {});
+        return basename;
+      },
+    };
+  }
+
+  planCreateJournal(params: { fullName: string; shortName?: string; publisherName?: string }): PlannedNoteAction<string> {
     return {
       basename: this.journalBasename(params),
       commit: () => this.createJournal(params),
@@ -234,10 +246,13 @@ export class NoteCreator {
    * Creates a Journal note named after the full title. The abbreviation, used
    * in BibTeX, goes in its own property. Returns the display name.
    */
-  async createJournal(params: { fullName: string; shortName?: string }): Promise<string> {
+  async createJournal(params: { fullName: string; shortName?: string; publisherName?: string }): Promise<string> {
     const safeName = this.journalBasename(params);
     if (this.vault.exists(joinPath(this.folderOf(TYPES.journal), `${safeName}.md`))) return safeName;
-    await this.createTyped(TYPES.journal, safeName, { [PROP.abbreviation]: params.shortName ?? null });
+    await this.createTyped(TYPES.journal, safeName, {
+      [PROP.abbreviation]: params.shortName ?? null,
+      ...(params.publisherName ? { [PROP.publisher]: wikilink(params.publisherName) } : {}),
+    });
     return safeName;
   }
 
@@ -298,6 +313,8 @@ export class NoteCreator {
     metadata: PaperMetadata;
     bibtex: string;
     authorNames: string[];
+    /** Display name of the publisher note; without it, the publisher as text. */
+    publisherName?: string;
     provenance: Provenance;
     topics?: string[];
   }): Promise<NoteRef> {
@@ -307,7 +324,7 @@ export class NoteCreator {
     return this.createTyped(TYPES.book, basename, {
       [PROP.title]: metadata.title,
       [PROP.authors]: authorNames.map(wikilink),
-      [PROP.publisher]: metadata.publisher ?? null,
+      [PROP.publisher]: params.publisherName ? wikilink(params.publisherName) : metadata.publisher ?? null,
       [PROP.year]: metadata.year > 0 ? metadata.year : null,
       [PROP.isbn]: metadata.isbn ?? null,
       [PROP.doi]: metadata.doi ?? null,
