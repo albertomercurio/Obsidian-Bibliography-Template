@@ -167,6 +167,14 @@ export class ImportService {
       deferredActions.push(...resolvedJournal.actions);
     }
 
+    // ---- 4b. Resolve publisher (books) --------------------------------------
+    let publisherName: string | undefined;
+    if (metadata.itemType === "book") {
+      const publisher = this.resolvePublisher(metadata.publisher);
+      publisherName = publisher?.displayName;
+      deferredActions.push(...(publisher?.actions ?? []));
+    }
+
     // ---- 5. Generate bibtex ------------------------------------------------
     const bibtex = generateBibtex({
       metadata,
@@ -190,6 +198,7 @@ export class ImportService {
           metadata,
           bibtex,
           authorNames,
+          publisherName,
           provenance,
           topics: options.topics,
         });
@@ -468,17 +477,31 @@ export class ImportService {
       }
     }
 
-    // Not found — create journal note
+    // Not found — create journal note, linked to its publisher
+    const publisher = this.resolvePublisher(metadata.publisher);
     const plannedJournal = this.creator.planCreateJournal({
       fullName: name,
       shortName: metadata.journalShort,
+      publisherName: publisher?.displayName,
     });
     return {
       displayName: plannedJournal.basename,
-      actions: [async () => {
+      actions: [...(publisher?.actions ?? []), async () => {
         await plannedJournal.commit();
       }],
     };
+  }
+
+  /**
+   * The publisher note to link, found by name or alias or to be created; none
+   * without a publishers folder in the settings or a publisher in the record.
+   */
+  resolvePublisher(name: string | undefined): PlannedEntityResolution | undefined {
+    if (!name?.trim() || !this.settings.publishersFolder) return undefined;
+    const found = this.index.findPublisher(name);
+    if (found) return { displayName: found.basename, actions: [] };
+    const planned = this.creator.planCreatePublisher(name.trim());
+    return { displayName: planned.basename, actions: [async () => { await planned.commit(); }] };
   }
 
   // --------------------------------------------------------------------------

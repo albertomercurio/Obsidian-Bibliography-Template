@@ -14,9 +14,9 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 
 ## Note format
 
-Notes use the properties `Type`, `Title`, `Authors`, `Journal`, `Year`, `DOI`, `arXiv`, `PDF`, `Read`, `Topics` and `BibTeX` (multi-line). Authors and journals are wikilinks to their own notes. Text from the source is in a quote callout that records where and when it was retrieved.
+Notes use the properties `Type`, `Title`, `Authors`, `Journal`, `Year`, `DOI`, `arXiv`, `PDF`, `Read`, `Topics` and `BibTeX` (multi-line). Authors and journals are wikilinks to their own notes, and so are publishers when the settings name a folder for them. Text from the source is in a quote callout that records where and when it was retrieved.
 
-**Settings:** the folder of each kind of note, and an optional templates folder. A file named `Article.md`, `Book.md`, `Person.md` or `Journal.md` in it sets the properties of new notes, their order and their body. An optional log note receives an entry for each change made from the command line.
+**Settings:** the folder of each kind of note, and an optional templates folder. With a publishers folder, a book links its publisher and a new journal links its own, found by name or alias or created as a `Publisher` note; without it, a book's publisher stays text. A file named `Article.md`, `Book.md`, `Person.md`, `Journal.md` or `Publisher.md` in the templates folder sets the properties of new notes, their order and their body. An optional log note receives an entry for each change made from the command line.
 
 ## Command line
 

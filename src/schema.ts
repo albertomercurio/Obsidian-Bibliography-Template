@@ -3,7 +3,7 @@
 // Pure module: unit-tested with Node.
 // ---------------------------------------------------------------------------
 
-export const TYPES = { article: "Article", book: "Book", person: "Person", journal: "Journal" } as const;
+export const TYPES = { article: "Article", book: "Book", person: "Person", journal: "Journal", publisher: "Publisher" } as const;
 
 export const PROP = {
   type: "Type",
@@ -55,6 +55,7 @@ export const DEFAULT_TEMPLATES: Record<string, NoteTemplate> = {
     body: "## Notes\n",
   },
   [TYPES.journal]: { keys: [PROP.abbreviation], body: "## Notes\n" },
+  [TYPES.publisher]: { keys: [], body: "## Notes\n" },
 };
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
