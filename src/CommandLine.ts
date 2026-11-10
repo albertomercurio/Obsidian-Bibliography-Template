@@ -8,7 +8,7 @@
 // registers them; the tests run them in Node.
 // ---------------------------------------------------------------------------
 
-import { attachPdf, linkedFiles, makeCover, sameBytes } from "./Attachments";
+import { addFiles, linkedFiles, makeCover } from "./Attachments";
 import { AutoUi } from "./AutoUi";
 import { allReferences, bibliography, referencesLinkedTo } from "./BibliographyExport";
 import { ImportService } from "./ImportService";
@@ -20,7 +20,7 @@ import { lintReferences, lintReport } from "./ReferenceLint";
 import { citekeyOf, localDate, PROP, provenanceOf } from "./schema";
 import { type Change, StagedVault, type YamlCodec } from "./StagedVault";
 import type { PluginSettings } from "./types";
-import { normDoi, VaultIndex } from "./VaultIndex";
+import { VaultIndex } from "./VaultIndex";
 
 export interface CommandHost {
   vault: VaultPort;
@@ -48,7 +48,7 @@ function session(host: CommandHost, apply: boolean, say: (line: string) => void,
   const creator = new NoteCreator(vault, settings, ui, index);
   const importer = new ImportService(vault, ui, host.http, settings, index, creator);
   const checker = new ReferenceCheck(vault, settings, index, creator, importer);
-  return { settings, vault, ui, index, importer, checker };
+  return { settings, vault, ui, importer, checker };
 }
 
 /** The note a query names, null when it names none; an error when that note does not exist. */
@@ -104,7 +104,7 @@ export interface AddOptions {
 export async function addCommand(host: CommandHost, options: AddOptions): Promise<string> {
   const out: string[] = [];
   const say = (...lines: string[]) => out.push(...lines);
-  const { settings, vault, ui, index, importer } = session(host, options.apply, say, new AutoUi(say, options.apply, { same: options.same, ask: options.ask }));
+  const { settings, vault, ui, importer } = session(host, options.apply, say, new AutoUi(say, options.apply, { same: options.same, ask: options.ask }));
   const topics = (options.topics ?? []).map((name) => {
     const note = vault.resolveLink(name, "");
     if (!note) throw new Error(`No note named "${name}" to link as a topic`);
@@ -123,35 +123,11 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
   const file = await importer.run(id, { topics, arxivId: options.arxiv });
   for (const decision of ui.decisions) say(`  · ${decision}`);
   for (const name of ui.unusedSame) say(`  ! same="${name}": no question about this author; name them as the preview does, before the colon`);
-  const cited = [...new Set((importer.last?.references ?? []).map((doi) => index.doiIndex.get(normDoi(doi))?.basename).filter(Boolean))];
-  if (cited.length) say(`  · cites, in the vault: ${cited.map((name) => `[[${name}]]`).join(", ")}`);
-
   const note = file ?? importer.existing;
-  const moves: string[] = [];
+  let moves: string[] = [];
   let trashed = false;
   let duplicate = false;
-  if (note && pdf) {
-    const pdfs = file ? [] : linkedFiles(vault, note, PROP.pdf);
-    let same: string | undefined;
-    for (const path of pdfs) if (path === pdf || (await sameBytes(vault, path, pdf))) same = path;
-    if (same && same !== pdf) {
-      say(`  · ${pdf} is the same file as ${same}, which the note links`);
-      duplicate = true;
-      trashed = await vault.trash(pdf);
-      say(trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
-    } else if (same) {
-      say(`  · the note links ${pdf} already`);
-    } else if (pdfs.length) {
-      say(`  · the note links another PDF, ${pdfs.join(", ")}: ${pdf} stays where it is`);
-    } else {
-      const final = await attachPdf(vault, settings, note, pdf, (line) => moves.push(line));
-      if (options.cover) await makeCover(vault, host.pdf, settings, note, { now: pdf, final }, say);
-    }
-    if (options.cover && (same || pdfs.length)) {
-      const first = pdfs[0];
-      await makeCover(vault, host.pdf, settings, note, { now: first, final: first }, say);
-    }
-  }
+  if (note && pdf) ({ moves, trashed, duplicate } = await addFiles(vault, host.pdf, settings, { note, created: Boolean(file), pdf, cover: options.cover }, say));
   if (!file && !vault.changes.length && !moves.length && !duplicate) return out.join("\n");
   for (const change of vault.changes) say(`${options.apply ? "+" : "?"} ${change.path}  (${change.action})`);
   say(...moves);

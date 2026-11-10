@@ -56,8 +56,6 @@ export interface PaperMetadata {
   isbn?: string;
   itemType: "article" | "book" | "preprint";
   abstract?: string;
-  /** DOIs of the works it cites, when the source lists them (Crossref). */
-  references?: string[];
   /**
    * Title with math rendered as inline LaTeX ($...$). Used exclusively for
    * .bib output. Do NOT use for filenames or frontmatter — Obsidian won't

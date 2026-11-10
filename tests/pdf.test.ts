@@ -12,7 +12,7 @@ import { nodeYaml, parseFrontmatter, splitNote } from "../src/node/frontmatter";
 import { figureOne, identifierOf } from "../src/PdfFiles";
 import type { Box, NoteRef, PdfPage, PdfPort } from "../src/ports";
 import { DEFAULT_SETTINGS, type PluginSettings } from "../src/types";
-import { ARTICLE, DOI, WORK, sampleVault } from "./helpers";
+import { ARTICLE, DOI, http, sampleVault } from "./helpers";
 
 const page = (...lines: string[]): PdfPage => ({
   width: 600,
@@ -93,14 +93,8 @@ const reader: PdfPort = {
   },
 };
 
-const REFERENCED = "10.1103/PhysRevA.87.013839";
-const citing = async ({ url }: { url: string }) =>
-  url.includes("api.crossref.org")
-    ? { status: 200, text: "", json: { message: { ...WORK, reference: [{ key: "1", DOI: REFERENCED }, { key: "2", unstructured: "no DOI" }] } } }
-    : { status: 404, text: "", json: null };
-
 const settings: PluginSettings = { ...DEFAULT_SETTINGS, pdfFolder: "Files", coverProperty: "Cover", logFile: "log.md" };
-const host = (vault: NodeVault): CommandHost => ({ vault, http: citing, settings, yaml: nodeYaml, pdf: reader, pause: 0 });
+const host = (vault: NodeVault): CommandHost => ({ vault, http, settings, yaml: nodeYaml, pdf: reader, pause: 0 });
 const props = (root: string, path: string) => parseFrontmatter(splitNote(readFileSync(join(root, path), "utf8")).yaml)!;
 
 function inboxVault(): string {
@@ -108,7 +102,7 @@ function inboxVault(): string {
   mkdirSync(join(root, "Inbox"), { recursive: true });
   writeFileSync(join(root, "Inbox/paper.pdf"), "%PDF-1.4 the paper");
   mkdirSync(join(root, "Articles"), { recursive: true });
-  writeFileSync(join(root, "Articles/Cited.md"), `---\nType: Article\nTitle: Cited\nDOI: ${REFERENCED}\n---\n`);
+  writeFileSync(join(root, "Articles/Without a PDF.md"), "---\nType: Article\nTitle: Without a PDF\nDOI: 10.1103/PhysRevA.87.013839\n---\n");
   return root;
 }
 
@@ -116,7 +110,6 @@ test("add pdf= reads the DOI, imports, moves the PDF next to the others with the
   const root = inboxVault();
   const preview = await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", cover: true, apply: false });
   assert.match(preview, new RegExp(`^Inbox/paper\\.pdf: ${DOI.replace(/\./g, "\\.")}$`, "m"));
-  assert.match(preview, /^ {2}· cites, in the vault: \[\[Cited\]\]$/m);
   assert.match(preview, /^\? Inbox\/paper\.pdf → Files\/Macri2022SpontaneousScatteringRaman\.pdf {2}\(move\)$/m);
   assert.match(preview, /^\? Files\/Macri2022SpontaneousScatteringRaman-cover\.png {2}\(create\)$/m);
   assert.ok(existsSync(join(root, "Inbox/paper.pdf")) && !existsSync(join(root, ARTICLE)), "a preview writes nothing");

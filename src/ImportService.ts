@@ -77,8 +77,7 @@ export interface ImportOptions {
 }
 
 export class ImportService {
-  /** After `run`: the record it fetched, and the note of the paper when the vault already had it. */
-  last: PaperMetadata | null = null;
+  /** After `run`: the note of the paper, when the vault already had it. */
   existing: NoteRef | null = null;
   private crossref: CrossrefService;
   private arxiv: ArxivService;
@@ -111,12 +110,10 @@ export class ImportService {
   async run(rawInput: string, options: ImportOptions = {}): Promise<NoteRef | null> {
     // ---- 1. Fetch metadata -------------------------------------------------
     let metadata: PaperMetadata;
-    this.last = null;
     this.existing = null;
     try {
       this.ui.notice("Fetching metadata…", 3000);
       metadata = await this.fetch(rawInput);
-      this.last = metadata;
     } catch (err: unknown) {
       this.ui.notice(`❌ ${formatFetchError(err)}`, 7000);
       return null;

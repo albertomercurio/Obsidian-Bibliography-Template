@@ -5,10 +5,12 @@
 // ---------------------------------------------------------------------------
 
 import { figureOne } from "./PdfFiles";
-import type { NoteRef, PdfPort } from "./ports";
+import type { NoteRef, PdfPort, VaultPort } from "./ports";
 import { citekeyOf, PROP } from "./schema";
-import type { StagedVault } from "./StagedVault";
 import type { PluginSettings } from "./types";
+
+/** The vault of a run: a preview plans, `apply` writes (StagedVault). */
+type Files = VaultPort & { readonly apply: boolean };
 
 const folderOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
@@ -23,25 +25,25 @@ function linksIn(value: unknown): string[] {
 const target = (link: string) => link.replace(/^\[\[|\]\]$/g, "").split("|")[0].split("#")[0].trim();
 
 /** The files a property of the note links, as paths; links to nothing are left out. */
-export function linkedFiles(vault: StagedVault, note: NoteRef, property: string): string[] {
+export function linkedFiles(vault: Files, note: NoteRef, property: string): string[] {
   const fm = vault.frontmatter(note.path) ?? {};
   return linksIn(fm[property])
     .map((link) => vault.resolveLink(target(link), note.path)?.path)
     .filter((path): path is string => Boolean(path));
 }
 
-function keyOf(vault: StagedVault, note: NoteRef): string {
+function keyOf(vault: Files, note: NoteRef): string {
   return citekeyOf(vault.frontmatter(note.path)?.[PROP.bibtex]) ?? note.basename;
 }
 
 /** `<folder>/<name><ext>`, or with -2, -3… when that is taken by another file. */
-function freePath(vault: StagedVault, folder: string, name: string, ext: string, self?: string): string {
+function freePath(vault: Files, folder: string, name: string, ext: string, self?: string): string {
   let path = join(folder, `${name}${ext}`);
   for (let i = 2; vault.exists(path) && path !== self; i++) path = join(folder, `${name}-${i}${ext}`);
   return path;
 }
 
-export async function sameBytes(vault: StagedVault, a: string, b: string): Promise<boolean> {
+export async function sameBytes(vault: Files, a: string, b: string): Promise<boolean> {
   const [x, y] = await Promise.all([vault.readBinary(a), vault.readBinary(b)]);
   if (x.byteLength !== y.byteLength) return false;
   const [u, v] = [new Uint8Array(x), new Uint8Array(y)];
@@ -54,7 +56,7 @@ export async function sameBytes(vault: StagedVault, a: string, b: string): Promi
  * named after the citation key, and adds it to the note's PDF property.
  * Returns where the PDF is, or will be after `apply`.
  */
-export async function attachPdf(vault: StagedVault, settings: PluginSettings, note: NoteRef, pdf: string, say: (line: string) => void): Promise<string> {
+export async function attachPdf(vault: Files, settings: PluginSettings, note: NoteRef, pdf: string, say: (line: string) => void): Promise<string> {
   const folder = settings.pdfFolder.trim().replace(/\/+$/, "") || folderOf(pdf);
   let path = freePath(vault, folder, keyOf(vault, note), ".pdf", pdf);
   if (path !== pdf) {
@@ -81,7 +83,7 @@ export async function attachPdf(vault: StagedVault, settings: PluginSettings, no
  * when there is no cover to make.
  */
 export async function makeCover(
-  vault: StagedVault,
+  vault: Files,
   pdfPort: PdfPort | undefined,
   settings: PluginSettings,
   note: NoteRef,
@@ -115,4 +117,47 @@ export async function makeCover(
   });
   say(`  · cover: Figure 1, page ${found.page} of the PDF`);
   return true;
+}
+
+export interface FilesResult {
+  /** The PDF was a copy of one the note links. */
+  duplicate: boolean;
+  trashed: boolean;
+  /** "? a → b  (move)" lines, for the output. */
+  moves: string[];
+}
+
+/**
+ * After an import: the PDF of the paper and, if asked, its cover. A new note,
+ * or an existing one without a PDF, gets the PDF; a copy of a PDF the note
+ * links goes to the trash; another PDF stays where it is.
+ */
+export async function addFiles(
+  vault: Files,
+  pdfPort: PdfPort | undefined,
+  settings: PluginSettings,
+  options: { note: NoteRef; created: boolean; pdf: string; cover?: boolean },
+  say: (line: string) => void
+): Promise<FilesResult> {
+  const { note, pdf } = options;
+  const result: FilesResult = { duplicate: false, trashed: false, moves: [] };
+  const pdfs = options.created ? [] : linkedFiles(vault, note, PROP.pdf);
+  let same: string | undefined;
+  for (const path of pdfs) if (path === pdf || (await sameBytes(vault, path, pdf))) same = path;
+  if (same && same !== pdf) {
+    say(`  · ${pdf} is the same file as ${same}, which the note links`);
+    result.duplicate = true;
+    result.trashed = await vault.trash(pdf);
+    say(result.trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
+  } else if (same) {
+    say(`  · the note links ${pdf} already`);
+  } else if (pdfs.length) {
+    say(`  · the note links another PDF, ${pdfs.join(", ")}: ${pdf} stays where it is`);
+  } else {
+    const final = await attachPdf(vault, settings, note, pdf, (line) => result.moves.push(line));
+    if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: pdf, final }, say);
+    return result;
+  }
+  if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: pdfs[0], final: pdfs[0] }, say);
+  return result;
 }

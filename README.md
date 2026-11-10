@@ -5,6 +5,8 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 ## What it does
 
 - **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist.
+- **Import from a PDF.** In the import window, choose a PDF of the vault that no note links yet, or right-click a PDF: *Import paper from this PDF* (also a command for the open PDF). The DOI can stay empty: the plugin reads it in the PDF. After the import the PDF moves to the PDF folder of the settings, named after the citation key, and the note links it; a copy of a PDF the note already links goes to the trash. With a cover property in the settings, the window also offers a cover from Figure 1.
+- **Make a cover from Figure 1** of the PDF, for the open reference or from its right-click menu, when it has a PDF and no cover.
 - **Check the active reference against its source:** compares title, authors, journal, year, DOI and the BibTeX content, and restores them from the source if you confirm. Your notes, `Read`, `Topics` and the citation key are kept.
 - **Check all references:** the same comparison on the whole vault. It offers to add what notes are missing, such as an article number in the BibTeX, and creates no notes. Where a note and its source disagree it changes nothing and lists them, because a source can be wrong too: decide one note at a time with the command above.
 - **Check all references offline:** each note against its own BibTeX entry (DOI, year, title, arXiv id, authors, journal), entries missing, unreadable or left in the body, and the same work twice (DOI, arXiv id, citation key, or the same title with no link between the notes). No network, nothing changed: it lists the problems, and a click opens the note.
@@ -38,8 +40,6 @@ obsidian-cli research-importer:lint [all] [format=json]                         
 
 - `same="Vincenzo Macrì"`: these authors, named as the preview names them, are the person already in the vault. For agents: show the preview to the user, then run again with their answer.
 - `ask`: the questions open in Obsidian's windows, merge included, while the command waits; ORCID name search follows the settings. `ask apply` imports as the palette does.
-
-`add` also lists the references already in the vault that the paper cites, when Crossref has its reference list: candidates for links between them.
 
 `pdf=` reads the DOI, or else the arXiv id, on the first pages of the PDF, unless `id=` names the paper. After the import it moves the PDF to the PDF folder of the settings, named after the citation key (`Macri2022SpontaneousScatteringRaman.pdf`, then `-2`), and adds it to `PDF`. If the paper is already in the vault, the note gains the PDF when it has none; a byte-for-byte copy of a PDF the note links goes to the trash with `apply`; another PDF stays where it is, and the output says which.
 
