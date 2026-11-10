@@ -41,7 +41,8 @@ export interface VaultPort {
   resolveLink(linkpath: string, sourcePath: string): NoteRef | null;
   /** The bytes of any file, such as a PDF. */
   readBinary(path: string): Promise<ArrayBuffer>;
-  createBinary(path: string, data: ArrayBuffer): Promise<void>;
+  /** Creates the file, or replaces what it holds. */
+  writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   /** Moves a file to the trash the user chose in the host; false when the host cannot. */
   trash(path: string): Promise<boolean>;
 }

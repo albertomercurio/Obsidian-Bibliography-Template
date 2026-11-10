@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import { figureOne } from "./PdfFiles";
-import type { NoteRef, PdfPort, VaultPort } from "./ports";
+import type { NoteRef, PdfPage, PdfPort, VaultPort } from "./ports";
 import { citekeyOf, PROP } from "./schema";
 import type { PluginSettings } from "./types";
 
@@ -41,6 +41,13 @@ function freePath(vault: Files, folder: string, name: string, ext: string, self?
   let path = join(folder, `${name}${ext}`);
   for (let i = 2; vault.exists(path) && path !== self; i++) path = join(folder, `${name}-${i}${ext}`);
   return path;
+}
+
+/** Two downloads of one PDF can differ in a few bytes (a date, an id) and not in their text. */
+async function sameText(pdfPort: PdfPort, a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([pdfPort.pages(a, 2000), pdfPort.pages(b, 2000)]);
+  const text = (page: PdfPage) => page.items.map((item) => item.str).join("");
+  return x.length === y.length && x.every((page, i) => text(page) === text(y[i]));
 }
 
 export async function sameBytes(vault: Files, a: string, b: string): Promise<boolean> {
@@ -111,7 +118,7 @@ export async function makeCover(
     return false;
   }
   const path = freePath(vault, folderOf(pdf.final), `${keyOf(vault, note)}-cover`, ".png");
-  await vault.createBinary(path, png);
+  await vault.writeBinary(path, png);
   await vault.processFrontMatter(note.path, (fm) => {
     fm[property] = `[[${nameOf(path)}]]`;
   });
@@ -143,9 +150,13 @@ export async function addFiles(
   const result: FilesResult = { duplicate: false, trashed: false, moves: [] };
   const pdfs = options.created ? [] : linkedFiles(vault, note, PROP.pdf);
   let same: string | undefined;
+  let how = "the same file as";
   for (const path of pdfs) if (path === pdf || (await sameBytes(vault, path, pdf))) same = path;
+  if (!same && pdfPort) {
+    for (const path of pdfs) if (await sameText(pdfPort, path, pdf)) [same, how] = [path, "another download of"];
+  }
   if (same && same !== pdf) {
-    say(`  · ${pdf} is the same file as ${same}, which the note links`);
+    say(`  · ${pdf} is ${how} ${same}, which the note links`);
     result.duplicate = true;
     result.trashed = await vault.trash(pdf);
     say(result.trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
@@ -155,9 +166,37 @@ export async function addFiles(
     say(`  · the note links another PDF, ${pdfs.join(", ")}: ${pdf} stays where it is`);
   } else {
     const final = await attachPdf(vault, settings, note, pdf, (line) => result.moves.push(line));
-    if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: pdf, final }, say);
+    // With apply the PDF has moved already; a preview finds it where it was.
+    if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: vault.apply ? final : pdf, final }, say);
     return result;
   }
   if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: pdfs[0], final: pdfs[0] }, say);
   return result;
+}
+
+/** An image for a cover: its bytes and extension (png, jpg…). */
+export interface CoverImage {
+  data: ArrayBuffer;
+  ext: string;
+}
+
+/**
+ * Makes an image the note's cover: `<citation key>-cover.<ext>` next to its
+ * PDF (or in the PDF folder), replacing a cover of that name; a cover with
+ * another name goes to the trash. Returns the path of the cover.
+ */
+export async function saveCover(vault: Files, settings: PluginSettings, note: NoteRef, image: CoverImage, say: (line: string) => void): Promise<string> {
+  const property = settings.coverProperty.trim();
+  if (!property) throw new Error("covers need a cover property in the settings");
+  const [pdf] = linkedFiles(vault, note, PROP.pdf);
+  const folder = pdf ? folderOf(pdf) : settings.pdfFolder.trim().replace(/\/+$/, "") || folderOf(note.path);
+  const path = join(folder, `${keyOf(vault, note)}-cover.${image.ext}`);
+  const [old] = linkedFiles(vault, note, property);
+  if (folder) await vault.ensureFolder(folder);
+  await vault.writeBinary(path, image.data);
+  await vault.processFrontMatter(note.path, (fm) => {
+    fm[property] = `[[${nameOf(path)}]]`;
+  });
+  if (old && old !== path) say((await vault.trash(old)) ? `  - ${old}: the old cover, moved to the trash` : `  · with apply, the old cover ${old} goes to the trash`);
+  return path;
 }

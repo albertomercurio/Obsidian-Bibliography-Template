@@ -5,9 +5,11 @@ export interface ImportRequest {
   id: string;
   /** Path of a PDF in the vault: moved next to the others, named after the citation key, and linked. */
   pdf?: string;
-  /** Cut a cover from Figure 1 of the PDF. */
-  cover: boolean;
+  /** The cover: Figure 1 of the PDF, the image in the clipboard, or none. */
+  cover: CoverSource;
 }
+
+export type CoverSource = "figure" | "clipboard" | "none";
 
 export interface ImportChoices {
   /** PDFs the modal offers: those no note links. */
@@ -23,7 +25,7 @@ export class ImportModal extends Modal {
 
   constructor(app: App, private choices: ImportChoices, private onSubmit: (request: ImportRequest) => void) {
     super(app);
-    this.request = { id: "", pdf: choices.pdf, cover: choices.covers };
+    this.request = { id: "", pdf: choices.pdf, cover: choices.covers ? "figure" : "none" };
   }
 
   onOpen(): void {
@@ -59,9 +61,16 @@ export class ImportModal extends Modal {
 
     if (this.choices.covers) {
       new Setting(contentEl)
-        .setName("Cover from Figure 1")
-        .setDesc("Cut from the PDF, linked from the cover property of the settings.")
-        .addToggle((toggle) => toggle.setValue(this.request.cover).onChange((value) => (this.request.cover = value)));
+        .setName("Cover")
+        .setDesc("Figure 1 cut from the PDF, or the image in the clipboard, such as a screenshot. Linked from the cover property of the settings.")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("figure", "Figure 1 of the PDF")
+            .addOption("clipboard", "Image in the clipboard")
+            .addOption("none", "None")
+            .setValue(this.request.cover)
+            .onChange((value) => (this.request.cover = value as CoverSource))
+        );
     }
 
     new Setting(contentEl)
@@ -72,7 +81,8 @@ export class ImportModal extends Modal {
   private submit(): void {
     if (!this.request.id && !this.request.pdf) return;
     this.close();
-    this.onSubmit({ ...this.request, cover: this.choices.covers && this.request.cover && Boolean(this.request.pdf) });
+    const cover = !this.choices.covers || (this.request.cover === "figure" && !this.request.pdf) ? "none" : this.request.cover;
+    this.onSubmit({ ...this.request, cover });
   }
 
   onClose(): void {

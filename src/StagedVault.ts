@@ -125,11 +125,11 @@ export class StagedVault implements VaultPort {
     return this.binaries.get(keyOf(path)) ?? this.base.readBinary(path);
   }
 
-  async createBinary(path: string, data: ArrayBuffer): Promise<void> {
-    if (this.exists(path)) throw new Error(`Already exists: ${path}`);
-    if (this.apply) await this.base.createBinary(path, data);
+  async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
+    const action = this.exists(path) ? "modify" : "create";
+    if (this.apply) await this.base.writeBinary(path, data);
     this.binaries.set(keyOf(path), data);
-    if (!this.changes.some((change) => change.path === path)) this.changes.push({ path, action: "create" });
+    if (!this.changes.some((change) => change.path === path)) this.changes.push({ path, action });
   }
 
   /** Only for real, like a rename. */

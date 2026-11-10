@@ -82,8 +82,10 @@ export class ObsidianVault implements VaultPort {
     return this.app.vault.readBinary(this.file(path));
   }
 
-  async createBinary(path: string, data: ArrayBuffer): Promise<void> {
-    await this.app.vault.createBinary(normalizePath(path), data);
+  async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
+    if (file instanceof TFile) await this.app.vault.modifyBinary(file, data);
+    else await this.app.vault.createBinary(normalizePath(path), data);
   }
 
   async trash(path: string): Promise<boolean> {
@@ -217,4 +219,28 @@ export class ObsidianUi implements Ui {
   open(basename: string): void {
     this.app.workspace.openLinkText(basename, "", false);
   }
+}
+
+/** The image in the clipboard, such as a screenshot; null when there is none. */
+export async function clipboardImage(): Promise<{ data: ArrayBuffer; ext: string } | null> {
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((type) => type.startsWith("image/"));
+      if (!type) continue;
+      const data = await (await item.getType(type)).arrayBuffer();
+      return { data, ext: type === "image/jpeg" ? "jpg" : type.slice("image/".length).replace(/\+.*$/, "") };
+    }
+  } catch {
+    // Not allowed or not supported here: Electron's clipboard below, on desktop.
+  }
+  try {
+    const image = (window as any).require?.("electron")?.clipboard?.readImage?.();
+    if (image && !image.isEmpty()) {
+      const png: Uint8Array = image.toPNG();
+      return { data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, ext: "png" };
+    }
+  } catch {
+    // Mobile: no Electron.
+  }
+  return null;
 }

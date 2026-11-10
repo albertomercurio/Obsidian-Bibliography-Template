@@ -117,8 +117,7 @@ export class NodeVault implements VaultPort {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   }
 
-  async createBinary(path: string, data: ArrayBuffer): Promise<void> {
-    if (this.exists(path)) throw new Error(`Already exists: ${path}`);
+  async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
     mkdirSync(join(this.root, posix.dirname(path)), { recursive: true });
     writeFileSync(join(this.root, path), Buffer.from(data));
     this.files.add(nfc(path));
