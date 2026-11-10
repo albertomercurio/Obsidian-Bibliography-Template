@@ -77,6 +77,8 @@ export interface ImportOptions {
 }
 
 export class ImportService {
+  /** After `run`: the note of the paper, when the vault already had it. */
+  existing: NoteRef | null = null;
   private crossref: CrossrefService;
   private arxiv: ArxivService;
   private orcid: OrcidService;
@@ -108,6 +110,7 @@ export class ImportService {
   async run(rawInput: string, options: ImportOptions = {}): Promise<NoteRef | null> {
     // ---- 1. Fetch metadata -------------------------------------------------
     let metadata: PaperMetadata;
+    this.existing = null;
     try {
       this.ui.notice("Fetching metadata…", 3000);
       metadata = await this.fetch(rawInput);
@@ -123,6 +126,7 @@ export class ImportService {
       if (existing) {
         this.ui.notice(`⚠️ This paper already exists in your vault:\n"${existing.basename}"`, 8000);
         this.ui.open(existing.basename);
+        this.existing = existing;
         return null;
       }
     }
@@ -131,6 +135,7 @@ export class ImportService {
       if (existing) {
         this.ui.notice(`⚠️ This paper already exists in your vault:\n"${existing.basename}"`, 8000);
         this.ui.open(existing.basename);
+        this.existing = existing;
         return null;
       }
     }

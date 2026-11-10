@@ -15,6 +15,10 @@ export interface PluginSettings {
   maxAuthors: number;
   /** Optional note where commands of the command line, run with `apply`, add what they wrote. */
   logFile: string;
+  /** Where `add pdf=` moves the PDF, named after the citation key; empty: it stays in its folder. */
+  pdfFolder: string;
+  /** Property that links the cover image, a figure cut from the PDF; empty: no covers. */
+  coverProperty: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -27,6 +31,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   skipOrcidSearch: false,
   maxAuthors: 25,
   logFile: "",
+  pdfFolder: "",
+  coverProperty: "",
 };
 
 // Normalised metadata returned by any fetch service

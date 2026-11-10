@@ -39,6 +39,46 @@ export interface VaultPort {
   rename(path: string, newPath: string): Promise<NoteRef | null>;
   /** The note a wikilink points to, resolved as Obsidian does. */
   resolveLink(linkpath: string, sourcePath: string): NoteRef | null;
+  /** The bytes of any file, such as a PDF. */
+  readBinary(path: string): Promise<ArrayBuffer>;
+  createBinary(path: string, data: ArrayBuffer): Promise<void>;
+  /** Moves a file to the trash the user chose in the host; false when the host cannot. */
+  trash(path: string): Promise<boolean>;
+}
+
+// ---- PDFs ----------------------------------------------------------------------
+
+/** A run of text on a PDF page, in PDF points from the top-left corner. */
+export interface PdfText {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Not horizontal, like the arXiv stamp in the margin. */
+  rotated?: boolean;
+}
+
+export interface PdfPage {
+  width: number;
+  height: number;
+  items: PdfText[];
+}
+
+/** A rectangle on a page, in PDF points from the top-left corner. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Reading PDFs: Obsidian has pdf.js; Node, for the tests, does not. */
+export interface PdfPort {
+  /** The text of the first `count` pages. */
+  pages(path: string, count: number): Promise<PdfPage[]>;
+  /** A region of a page as a PNG about `width` pixels wide, without its white margins. */
+  png(path: string, page: number, box: Box, width: number): Promise<ArrayBuffer>;
 }
 
 // ---- Questions the core may ask -----------------------------------------------

@@ -6,11 +6,14 @@ import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ReferenceCheck, type CheckResult } from "./src/ReferenceCheck";
 import { lintReferences } from "./src/ReferenceLint";
-import { addCommand, checkCommand, type CommandHost, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
-import { ImportModal } from "./src/obsidian/ImportModal";
+import { addCommand, checkCommand, type CommandHost, coverCommand, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
+import { addFiles, linkedFiles, makeCover } from "./src/Attachments";
+import { ImportModal, type ImportRequest } from "./src/obsidian/ImportModal";
+import { identifierOf } from "./src/PdfFiles";
+import { StagedVault } from "./src/StagedVault";
 import { ConfirmModal } from "./src/obsidian/ConfirmModal";
 import { LintModal } from "./src/obsidian/LintModal";
-import { obsidianHttp, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
+import { obsidianHttp, ObsidianPdf, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
 import { generateBibtex } from "./src/BibtexGenerator";
 import { allReferences, bibliography, referencesLinkedTo } from "./src/BibliographyExport";
 import { bibtexFields, citekeyOf, PROP, TYPES } from "./src/schema";
@@ -47,13 +50,49 @@ export default class ResearchImporterPlugin extends Plugin {
       })
     );
 
-    const importPaper = () =>
-      new ImportModal(this.app, (input) => {
-        this.importer.run(input).catch((err) => this.fail("Import", err));
+    const importPaper = (pdf?: string) =>
+      new ImportModal(this.app, { pdfs: this.unlinkedPdfs(pdf), pdf, covers: Boolean(this.settings.coverProperty.trim()) }, (request) => {
+        this.importPaper(request).catch((err) => this.fail("Import", err));
       }).open();
 
-    this.addCommand({ id: "import-paper", name: "Import paper from DOI or arXiv ID", callback: importPaper });
-    this.addRibbonIcon("book-open", "Import paper", importPaper);
+    this.addCommand({ id: "import-paper", name: "Import paper from DOI or arXiv ID", callback: () => importPaper() });
+    this.addRibbonIcon("book-open", "Import paper", () => importPaper());
+
+    this.addCommand({
+      id: "import-active-pdf",
+      name: "Import paper from the active PDF",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (file?.extension.toLowerCase() !== "pdf") return false;
+        if (!checking) importPaper(file.path);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "make-cover",
+      name: "Make a cover from Figure 1 of the active reference's PDF",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.canCover(file)) return false;
+        if (!checking) this.makeCover(file).catch((err) => this.fail("Cover", err));
+        return true;
+      },
+    });
+
+    // Right click on a PDF, or on a reference without a cover.
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile)) return;
+        if (file.extension.toLowerCase() === "pdf") {
+          menu.addItem((item) => item.setTitle("Import paper from this PDF").setIcon("book-open").onClick(() => importPaper(file.path)));
+        } else if (this.canCover(file)) {
+          menu.addItem((item) =>
+            item.setTitle("Make a cover from Figure 1").setIcon("image").onClick(() => this.makeCover(file).catch((err) => this.fail("Cover", err)))
+          );
+        }
+      })
+    );
 
     this.addCommand({
       id: "regenerate-bibtex",
@@ -141,7 +180,7 @@ export default class ResearchImporterPlugin extends Plugin {
           return `Error: ${err instanceof Error ? err.message : err}`;
         }
       });
-    const host = (): CommandHost => ({ vault: this.vaultPort, http: obsidianHttp, settings: this.settings, yaml: obsidianYaml });
+    const host = (): CommandHost => ({ vault: this.vaultPort, http: obsidianHttp, settings: this.settings, yaml: obsidianYaml, pdf: new ObsidianPdf(this.app) });
     const on = (params: CliData, name: string) => params[name] === "true";
     const value = (params: CliData, name: string): string | undefined => {
       if (params[name] === "true") throw new Error(`${name} needs a value: ${name}=…`);
@@ -151,9 +190,11 @@ export default class ResearchImporterPlugin extends Plugin {
 
     cli(
       "add",
-      "Import a paper from its DOI or arXiv id, with its authors and journal; preview unless apply",
+      "Import a paper from its DOI or arXiv id, or from its PDF, with its authors and journal; preview unless apply",
       {
-        id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper", required: true },
+        id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper (default: the one printed in the PDF)" },
+        pdf: { value: "<path>", description: "A PDF of the paper in the vault: moved to the PDF folder, named after the citation key, and linked; a copy of the PDF a note links already goes to the trash" },
+        cover: { description: "Also make a cover from Figure 1 of the PDF (needs the cover property in the settings)" },
         arxiv: { value: "<id>", description: "arXiv id of its preprint, when id is the DOI of the published version" },
         topics: { value: "<names>", description: "Topic notes to link, separated by commas" },
         same: { value: "<names>", description: "Authors that are the person already in the vault, named as the preview names them, separated by commas" },
@@ -161,11 +202,11 @@ export default class ResearchImporterPlugin extends Plugin {
         apply: { description: "Write the notes" },
       },
       async (params) => {
-        const id = value(params, "id");
-        if (!id) throw new Error("name the paper: id=<DOI|arXiv>");
         const list = (name: string) => value(params, name)?.split(",").map((item) => item.trim()).filter(Boolean);
         return addCommand(host(), {
-          id,
+          id: value(params, "id"),
+          pdf: value(params, "pdf"),
+          cover: on(params, "cover"),
           topics: list("topics"),
           arxiv: value(params, "arxiv"),
           same: list("same"),
@@ -173,6 +214,16 @@ export default class ResearchImporterPlugin extends Plugin {
           apply: on(params, "apply"),
         });
       }
+    );
+    cli(
+      "cover",
+      "Make covers from Figure 1 of the PDF, for references without one; preview unless apply",
+      {
+        file: { value: "<name>", description: "Only this reference, by name (default: every reference with a PDF and no cover)" },
+        path: { value: "<path>", description: "Only the reference at this path" },
+        apply: { description: "Write the covers" },
+      },
+      async (params) => coverCommand(host(), { note: note(params), apply: on(params, "apply") })
     );
     cli(
       "check",
@@ -213,6 +264,58 @@ export default class ResearchImporterPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  /** PDFs that no note links, the given one first. */
+  private unlinkedPdfs(first?: string): string[] {
+    const linked = new Set<string>();
+    for (const targets of Object.values(this.app.metadataCache.resolvedLinks)) for (const path of Object.keys(targets)) linked.add(path);
+    const pdfs = this.app.vault
+      .getFiles()
+      .filter((file) => file.extension.toLowerCase() === "pdf" && !linked.has(file.path) && file.path !== first)
+      .map((file) => file.path)
+      .sort((a, b) => a.localeCompare(b));
+    return first ? [first, ...pdfs] : pdfs;
+  }
+
+  /** The import of the palette, then the PDF and its cover. */
+  private async importPaper(request: ImportRequest): Promise<void> {
+    const pdf = new ObsidianPdf(this.app);
+    let id = request.id;
+    if (!id && request.pdf) {
+      new Notice("Reading the PDF…", 3000);
+      id = identifierOf(await pdf.pages(request.pdf, 2));
+    }
+    const file = await this.importer.run(id);
+    const note = file ?? this.importer.existing;
+    if (!note || !request.pdf) return;
+    // The new note's properties reach the metadata cache a moment after it is written.
+    const created = this.app.vault.getAbstractFileByPath(note.path);
+    for (let i = 0; i < 60 && created instanceof TFile && !this.app.metadataCache.getFileCache(created)?.frontmatter?.[PROP.bibtex]; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const lines: string[] = [];
+    const vault = new StagedVault(this.vaultPort, obsidianYaml, true);
+    const result = await addFiles(vault, pdf, this.settings, { note, created: Boolean(file), pdf: request.pdf, cover: request.cover }, (line) => lines.push(line));
+    const shown = [...result.moves, ...lines].map((line) => line.replace(/^\s*[·+?-]\s+/, "").replace(/\s+\(move\)$/, ""));
+    if (shown.length) new Notice(shown.join("\n"), 10000);
+  }
+
+  /** A reference with a PDF and no cover, when the settings name a cover property. */
+  private canCover(file: TFile): boolean {
+    const property = this.settings.coverProperty.trim();
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!property || !fm || fm[property] || (fm[PROP.type] !== TYPES.article && fm[PROP.type] !== TYPES.book)) return false;
+    return linkedFiles(new StagedVault(this.vaultPort, obsidianYaml, false), ref(file), PROP.pdf).length > 0;
+  }
+
+  private async makeCover(file: TFile): Promise<void> {
+    const vault = new StagedVault(this.vaultPort, obsidianYaml, true);
+    const [pdf] = linkedFiles(vault, ref(file), PROP.pdf);
+    const lines: string[] = [];
+    new Notice("Looking for Figure 1…", 3000);
+    const made = await makeCover(vault, new ObsidianPdf(this.app), this.settings, ref(file), { now: pdf, final: pdf }, (line) => lines.push(line));
+    new Notice(made ? `✅ Cover made from Figure 1 of ${pdf}.` : lines.map((line) => line.replace(/^\s*[·!]\s+/, "")).join("\n"), 8000);
   }
 
   private fail(what: string, err: unknown): void {

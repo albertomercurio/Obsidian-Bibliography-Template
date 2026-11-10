@@ -37,6 +37,26 @@ export class ResearchImporterSettingTab extends PluginSettingTab {
     );
 
     new Setting(containerEl)
+      .setName("PDF folder")
+      .setDesc("Optional. Where the command line's add pdf= moves the PDF of a paper, named after its citation key. Empty: it stays in its folder.")
+      .addText((text) =>
+        text.setValue(this.plugin.settings.pdfFolder).onChange(async (value) => {
+          this.plugin.settings.pdfFolder = value.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Cover property")
+      .setDesc("Optional, e.g. Cover. The property that links a cover: Figure 1 cut from the PDF by the command line (add cover, cover). Empty: no covers.")
+      .addText((text) =>
+        text.setValue(this.plugin.settings.coverProperty).onChange(async (value) => {
+          this.plugin.settings.coverProperty = value.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("Log note")
       .setDesc("Optional, e.g. log.md. Commands run from Obsidian's command line with apply add what they wrote to the end of this note.")
       .addText((text) =>
