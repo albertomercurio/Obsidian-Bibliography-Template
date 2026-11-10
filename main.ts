@@ -7,13 +7,13 @@ import { ImportService } from "./src/ImportService";
 import { ReferenceCheck, type CheckResult } from "./src/ReferenceCheck";
 import { lintReferences } from "./src/ReferenceLint";
 import { addCommand, checkCommand, type CommandHost, coverCommand, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
-import { addFiles, linkedFiles, makeCover } from "./src/Attachments";
+import { addFiles, linkedFiles, makeCover, saveCover } from "./src/Attachments";
 import { ImportModal, type ImportRequest } from "./src/obsidian/ImportModal";
 import { identifierOf } from "./src/PdfFiles";
 import { StagedVault } from "./src/StagedVault";
 import { ConfirmModal } from "./src/obsidian/ConfirmModal";
 import { LintModal } from "./src/obsidian/LintModal";
-import { obsidianHttp, ObsidianPdf, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
+import { clipboardImage, obsidianHttp, ObsidianPdf, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
 import { generateBibtex } from "./src/BibtexGenerator";
 import { allReferences, bibliography, referencesLinkedTo } from "./src/BibliographyExport";
 import { bibtexFields, citekeyOf, PROP, TYPES } from "./src/schema";
@@ -80,15 +80,33 @@ export default class ResearchImporterPlugin extends Plugin {
       },
     });
 
-    // Right click on a PDF, or on a reference without a cover.
+    this.addCommand({
+      id: "paste-cover",
+      name: "Paste the cover of the active reference from the clipboard",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isReference(file) || !this.settings.coverProperty.trim()) return false;
+        if (!checking) this.pasteCover(file).catch((err) => this.fail("Cover", err));
+        return true;
+      },
+    });
+
+    // Right click on a PDF, or on a reference.
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile)) return;
         if (file.extension.toLowerCase() === "pdf") {
           menu.addItem((item) => item.setTitle("Import paper from this PDF").setIcon("book-open").onClick(() => importPaper(file.path)));
-        } else if (this.canCover(file)) {
+          return;
+        }
+        if (this.canCover(file)) {
           menu.addItem((item) =>
             item.setTitle("Make a cover from Figure 1").setIcon("image").onClick(() => this.makeCover(file).catch((err) => this.fail("Cover", err)))
+          );
+        }
+        if (this.isReference(file) && this.settings.coverProperty.trim()) {
+          menu.addItem((item) =>
+            item.setTitle("Paste the cover from the clipboard").setIcon("clipboard-paste").onClick(() => this.pasteCover(file).catch((err) => this.fail("Cover", err)))
           );
         }
       })
@@ -281,6 +299,9 @@ export default class ResearchImporterPlugin extends Plugin {
   /** The import of the palette, then the PDF and its cover. */
   private async importPaper(request: ImportRequest): Promise<void> {
     const pdf = new ObsidianPdf(this.app);
+    // The clipboard first, before anything else can change it.
+    const image = request.cover === "clipboard" ? await clipboardImage() : null;
+    if (request.cover === "clipboard" && !image) new Notice("No image in the clipboard: no cover.", 6000);
     let id = request.id;
     if (!id && request.pdf) {
       new Notice("Reading the PDF…", 3000);
@@ -288,7 +309,7 @@ export default class ResearchImporterPlugin extends Plugin {
     }
     const file = await this.importer.run(id);
     const note = file ?? this.importer.existing;
-    if (!note || !request.pdf) return;
+    if (!note || (!request.pdf && !image)) return;
     // The new note's properties reach the metadata cache a moment after it is written.
     const created = this.app.vault.getAbstractFileByPath(note.path);
     for (let i = 0; i < 60 && created instanceof TFile && !this.app.metadataCache.getFileCache(created)?.frontmatter?.[PROP.bibtex]; i++) {
@@ -296,9 +317,31 @@ export default class ResearchImporterPlugin extends Plugin {
     }
     const lines: string[] = [];
     const vault = new StagedVault(this.vaultPort, obsidianYaml, true);
-    const result = await addFiles(vault, pdf, this.settings, { note, created: Boolean(file), pdf: request.pdf, cover: request.cover }, (line) => lines.push(line));
+    const result = request.pdf
+      ? await addFiles(vault, pdf, this.settings, { note, created: Boolean(file), pdf: request.pdf, cover: request.cover === "figure" }, (line) => lines.push(line))
+      : { moves: [] };
+    if (image) lines.push(`Cover: ${await saveCover(vault, this.settings, note, image, (line) => lines.push(line))}, from the clipboard`);
     const shown = [...result.moves, ...lines].map((line) => line.replace(/^\s*[·+?-]\s+/, "").replace(/\s+\(move\)$/, ""));
     if (shown.length) new Notice(shown.join("\n"), 10000);
+  }
+
+  private isReference(file: TFile): boolean {
+    const type = this.app.metadataCache.getFileCache(file)?.frontmatter?.[PROP.type];
+    return type === TYPES.article || type === TYPES.book;
+  }
+
+  /** The image in the clipboard becomes the cover; replacing one asks first. */
+  private async pasteCover(file: TFile): Promise<void> {
+    const image = await clipboardImage();
+    if (!image) {
+      new Notice("No image in the clipboard. Take a screenshot to the clipboard first.", 6000);
+      return;
+    }
+    const current = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.coverProperty.trim()];
+    if (current && !(await new ConfirmModal(this.app, `Replace the cover of "${file.basename}"?`, [`Now: ${current}`], "Replace").ask())) return;
+    const lines: string[] = [];
+    const path = await saveCover(new StagedVault(this.vaultPort, obsidianYaml, true), this.settings, ref(file), image, (line) => lines.push(line));
+    new Notice([`✅ Cover: ${path}`, ...lines.map((line) => line.replace(/^\s*[·-]\s+/, ""))].join("\n"), 6000);
   }
 
   /** A reference with a PDF and no cover, when the settings name a cover property. */

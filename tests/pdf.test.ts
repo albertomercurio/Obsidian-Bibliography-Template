@@ -6,7 +6,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { saveCover } from "../src/Attachments";
 import { addCommand, type CommandHost, coverCommand } from "../src/CommandLine";
+import { StagedVault } from "../src/StagedVault";
 import { NodeVault } from "../src/node/NodeHost";
 import { nodeYaml, parseFrontmatter, splitNote } from "../src/node/frontmatter";
 import { figureOne, identifierOf } from "../src/PdfFiles";
@@ -83,18 +85,23 @@ class MovingVault extends NodeVault {
   }
 }
 
-/** A PDF reader that knows one paper: its first page prints the DOI, its second has Figure 1. */
-const reader: PdfPort = {
-  async pages() {
-    return [page("Physical Review Letters", `DOI: ${DOI}`), ...pagesOf("ludwig")];
+/**
+ * A PDF reader for files that are text: the first page prints the DOI and the
+ * file's text, without the download stamp that tells two downloads apart; the
+ * second page has Figure 1.
+ */
+const readerOf = (root: string): PdfPort => ({
+  async pages(path: string) {
+    const text = readFileSync(join(root, path), "utf8").replace(/ downloaded .*$/, "");
+    return [page("Physical Review Letters", `DOI: ${DOI}`, text), ...pagesOf("ludwig")];
   },
   async png() {
     return new Uint8Array([137, 80, 78, 71]).buffer;
   },
-};
+});
 
 const settings: PluginSettings = { ...DEFAULT_SETTINGS, pdfFolder: "Files", coverProperty: "Cover", logFile: "log.md" };
-const host = (vault: NodeVault): CommandHost => ({ vault, http, settings, yaml: nodeYaml, pdf: reader, pause: 0 });
+const host = (vault: NodeVault): CommandHost => ({ vault, http, settings, yaml: nodeYaml, pdf: readerOf(vault.root), pause: 0 });
 const props = (root: string, path: string) => parseFrontmatter(splitNote(readFileSync(join(root, path), "utf8")).yaml)!;
 
 function inboxVault(): string {
@@ -139,6 +146,11 @@ test("add pdf= of a paper already there: a copy of its PDF goes to the trash, an
   assert.match(applied, /- Inbox\/copy\.pdf: moved to the trash/);
   assert.deepEqual(vault.trashed, ["Inbox/copy.pdf"]);
 
+  writeFileSync(join(root, "Inbox/download.pdf"), "%PDF-1.4 the paper downloaded on another day");
+  const download = await addCommand(host(vault), { pdf: "Inbox/download.pdf", apply: true });
+  assert.match(download, /Inbox\/download\.pdf is another download of Files\/Macri2022SpontaneousScatteringRaman\.pdf, which the note links/);
+  assert.deepEqual(vault.trashed, ["Inbox/copy.pdf", "Inbox/download.pdf"]);
+
   writeFileSync(join(root, "Inbox/other.pdf"), "%PDF-1.4 another version");
   const other = await addCommand(host(new MovingVault(root)), { pdf: "Inbox/other.pdf", apply: true });
   assert.match(other, /the note links another PDF, Files\/Macri2022SpontaneousScatteringRaman\.pdf: Inbox\/other\.pdf stays where it is/);
@@ -156,4 +168,24 @@ test("cover makes covers for references with a PDF and none, and only with apply
   assert.equal(props(root, ARTICLE).Cover, "[[Macri2022SpontaneousScatteringRaman-cover.png]]");
   assert.match(await coverCommand(host(new MovingVault(root)), { apply: false }), /Every reference with a PDF has a cover\./);
   await assert.rejects(coverCommand({ ...host(new MovingVault(root)), settings: DEFAULT_SETTINGS }, { apply: false }), /cover property in the settings/);
+});
+
+test("an image as the cover: <citation key>-cover next to the PDF, replacing the old one", async () => {
+  const root = inboxVault();
+  await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", cover: true, apply: true });
+  assert.equal(props(root, ARTICLE).Cover, "[[Macri2022SpontaneousScatteringRaman-cover.png]]");
+  const vault = new MovingVault(root);
+  const staged = new StagedVault(vault, nodeYaml, true);
+  const note = { path: ARTICLE, basename: ARTICLE.slice(9, -3) };
+  const said: string[] = [];
+  const jpeg = new Uint8Array([255, 216, 255]).buffer;
+  assert.equal(await saveCover(staged, settings, note, { data: jpeg, ext: "jpg" }, (line) => said.push(line)), "Files/Macri2022SpontaneousScatteringRaman-cover.jpg");
+  assert.equal(props(root, ARTICLE).Cover, "[[Macri2022SpontaneousScatteringRaman-cover.jpg]]");
+  assert.deepEqual(vault.trashed, ["Files/Macri2022SpontaneousScatteringRaman-cover.png"], "the old cover, with another name, goes to the trash");
+  assert.match(said.join("\n"), /the old cover, moved to the trash/);
+
+  const png = new Uint8Array([137, 80, 78, 71, 1]).buffer;
+  await saveCover(new StagedVault(vault, nodeYaml, true), settings, note, { data: png, ext: "jpg" }, () => {});
+  assert.deepEqual([...readFileSync(join(root, "Files/Macri2022SpontaneousScatteringRaman-cover.jpg"))], [137, 80, 78, 71, 1], "a cover of the same name is replaced");
+  assert.equal(vault.trashed.length, 1);
 });

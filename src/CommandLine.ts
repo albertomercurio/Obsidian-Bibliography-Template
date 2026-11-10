@@ -142,7 +142,7 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
     ...ui.decisions,
     ...vault.changes.map(label),
     ...moves.map((line) => line.replace(/^\+ /, "moved: ").replace(/\s+\(move\)$/, "")),
-    ...(trashed ? [`trashed: ${pdf}, the same file as the PDF the note links`] : []),
+    ...(trashed ? [`trashed: ${pdf}, a copy of the PDF the note links`] : []),
   ]);
   const files = vault.changes.filter((change) => !change.path.toLowerCase().endsWith(".md")).length;
   say("", files ? `${vault.changes.length - files} notes and ${files} files written.` : `${vault.changes.length} notes written.`);
