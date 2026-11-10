@@ -6,11 +6,11 @@ import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
 import { ReferenceCheck, type CheckResult } from "./src/ReferenceCheck";
 import { lintReferences } from "./src/ReferenceLint";
-import { addCommand, checkCommand, type CommandHost, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
+import { addCommand, checkCommand, type CommandHost, coverCommand, exportCommand, lintCommand, type NoteQuery } from "./src/CommandLine";
 import { ImportModal } from "./src/obsidian/ImportModal";
 import { ConfirmModal } from "./src/obsidian/ConfirmModal";
 import { LintModal } from "./src/obsidian/LintModal";
-import { obsidianHttp, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
+import { obsidianHttp, ObsidianPdf, ObsidianUi, ObsidianVault, obsidianYaml, ref } from "./src/obsidian/ObsidianHost";
 import { generateBibtex } from "./src/BibtexGenerator";
 import { allReferences, bibliography, referencesLinkedTo } from "./src/BibliographyExport";
 import { bibtexFields, citekeyOf, PROP, TYPES } from "./src/schema";
@@ -141,7 +141,7 @@ export default class ResearchImporterPlugin extends Plugin {
           return `Error: ${err instanceof Error ? err.message : err}`;
         }
       });
-    const host = (): CommandHost => ({ vault: this.vaultPort, http: obsidianHttp, settings: this.settings, yaml: obsidianYaml });
+    const host = (): CommandHost => ({ vault: this.vaultPort, http: obsidianHttp, settings: this.settings, yaml: obsidianYaml, pdf: new ObsidianPdf(this.app) });
     const on = (params: CliData, name: string) => params[name] === "true";
     const value = (params: CliData, name: string): string | undefined => {
       if (params[name] === "true") throw new Error(`${name} needs a value: ${name}=…`);
@@ -151,9 +151,11 @@ export default class ResearchImporterPlugin extends Plugin {
 
     cli(
       "add",
-      "Import a paper from its DOI or arXiv id, with its authors and journal; preview unless apply",
+      "Import a paper from its DOI or arXiv id, or from its PDF, with its authors and journal; preview unless apply",
       {
-        id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper", required: true },
+        id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper (default: the one printed in the PDF)" },
+        pdf: { value: "<path>", description: "A PDF of the paper in the vault: moved to the PDF folder, named after the citation key, and linked; a copy of the PDF a note links already goes to the trash" },
+        cover: { description: "Also make a cover from Figure 1 of the PDF (needs the cover property in the settings)" },
         arxiv: { value: "<id>", description: "arXiv id of its preprint, when id is the DOI of the published version" },
         topics: { value: "<names>", description: "Topic notes to link, separated by commas" },
         same: { value: "<names>", description: "Authors that are the person already in the vault, named as the preview names them, separated by commas" },
@@ -161,11 +163,11 @@ export default class ResearchImporterPlugin extends Plugin {
         apply: { description: "Write the notes" },
       },
       async (params) => {
-        const id = value(params, "id");
-        if (!id) throw new Error("name the paper: id=<DOI|arXiv>");
         const list = (name: string) => value(params, name)?.split(",").map((item) => item.trim()).filter(Boolean);
         return addCommand(host(), {
-          id,
+          id: value(params, "id"),
+          pdf: value(params, "pdf"),
+          cover: on(params, "cover"),
           topics: list("topics"),
           arxiv: value(params, "arxiv"),
           same: list("same"),
@@ -173,6 +175,16 @@ export default class ResearchImporterPlugin extends Plugin {
           apply: on(params, "apply"),
         });
       }
+    );
+    cli(
+      "cover",
+      "Make covers from Figure 1 of the PDF, for references without one; preview unless apply",
+      {
+        file: { value: "<name>", description: "Only this reference, by name (default: every reference with a PDF and no cover)" },
+        path: { value: "<path>", description: "Only the reference at this path" },
+        apply: { description: "Write the covers" },
+      },
+      async (params) => coverCommand(host(), { note: note(params), apply: on(params, "apply") })
     );
     cli(
       "check",

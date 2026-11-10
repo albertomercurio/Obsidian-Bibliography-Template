@@ -35,6 +35,7 @@ export class StagedVault implements VaultPort {
   /** Writes of this run, in order: planned in a preview, done with `apply`. */
   readonly changes: Change[] = [];
   private staged = new Map<string, Staged>();
+  private binaries = new Map<string, ArrayBuffer>();
 
   constructor(private base: VaultPort, private yaml: YamlCodec, readonly apply: boolean) {}
 
@@ -70,7 +71,7 @@ export class StagedVault implements VaultPort {
   }
 
   exists(path: string): boolean {
-    return this.staged.has(keyOf(path)) || this.base.exists(path);
+    return this.staged.has(keyOf(path)) || this.binaries.has(keyOf(path)) || this.base.exists(path);
   }
 
   async read(path: string): Promise<string> {
@@ -118,6 +119,22 @@ export class StagedVault implements VaultPort {
       this.staged.set(keyOf(renamed.path), { ...staged, ref: renamed });
     }
     return renamed;
+  }
+
+  async readBinary(path: string): Promise<ArrayBuffer> {
+    return this.binaries.get(keyOf(path)) ?? this.base.readBinary(path);
+  }
+
+  async createBinary(path: string, data: ArrayBuffer): Promise<void> {
+    if (this.exists(path)) throw new Error(`Already exists: ${path}`);
+    if (this.apply) await this.base.createBinary(path, data);
+    this.binaries.set(keyOf(path), data);
+    if (!this.changes.some((change) => change.path === path)) this.changes.push({ path, action: "create" });
+  }
+
+  /** Only for real, like a rename. */
+  async trash(path: string): Promise<boolean> {
+    return this.apply ? this.base.trash(path) : false;
   }
 
   resolveLink(linkpath: string, sourcePath: string): NoteRef | null {

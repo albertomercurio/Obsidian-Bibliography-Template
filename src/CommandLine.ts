@@ -8,23 +8,27 @@
 // registers them; the tests run them in Node.
 // ---------------------------------------------------------------------------
 
+import { attachPdf, linkedFiles, makeCover, sameBytes } from "./Attachments";
 import { AutoUi } from "./AutoUi";
 import { allReferences, bibliography, referencesLinkedTo } from "./BibliographyExport";
 import { ImportService } from "./ImportService";
 import { NoteCreator } from "./NoteCreator";
-import type { Http, NoteRef, Ui, VaultPort } from "./ports";
+import { identifierOf } from "./PdfFiles";
+import type { Http, NoteRef, PdfPort, Ui, VaultPort } from "./ports";
 import { ReferenceCheck } from "./ReferenceCheck";
 import { lintReferences, lintReport } from "./ReferenceLint";
 import { citekeyOf, localDate, PROP, provenanceOf } from "./schema";
 import { type Change, StagedVault, type YamlCodec } from "./StagedVault";
 import type { PluginSettings } from "./types";
-import { VaultIndex } from "./VaultIndex";
+import { normDoi, VaultIndex } from "./VaultIndex";
 
 export interface CommandHost {
   vault: VaultPort;
   http: Http;
   settings: PluginSettings;
   yaml: YamlCodec;
+  /** Reads PDFs: their identifier and Figure 1, for `add pdf=` and covers. Obsidian has one. */
+  pdf?: PdfPort;
   /** Pause between two records fetched from the public APIs, in milliseconds (default 200). */
   pause?: number;
 }
@@ -44,7 +48,7 @@ function session(host: CommandHost, apply: boolean, say: (line: string) => void,
   const creator = new NoteCreator(vault, settings, ui, index);
   const importer = new ImportService(vault, ui, host.http, settings, index, creator);
   const checker = new ReferenceCheck(vault, settings, index, creator, importer);
-  return { settings, vault, ui, importer, checker };
+  return { settings, vault, ui, index, importer, checker };
 }
 
 /** The note a query names, null when it names none; an error when that note does not exist. */
@@ -80,8 +84,12 @@ async function log(host: CommandHost, kind: string, title: string, details: stri
 }
 
 export interface AddOptions {
-  /** DOI or arXiv id. */
-  id: string;
+  /** DOI or arXiv id; without it, the one printed in `pdf`. */
+  id?: string;
+  /** A PDF of the paper in the vault: moved to the PDF folder, named after the citation key, and linked. */
+  pdf?: string;
+  /** Also make a cover from Figure 1 of the PDF. */
+  cover?: boolean;
   /** Names of topic notes to link; each must exist. */
   topics?: string[];
   /** arXiv id of the preprint, when `id` is the DOI of the published version. */
@@ -96,29 +104,113 @@ export interface AddOptions {
 export async function addCommand(host: CommandHost, options: AddOptions): Promise<string> {
   const out: string[] = [];
   const say = (...lines: string[]) => out.push(...lines);
-  const { vault, ui, importer } = session(host, options.apply, say, new AutoUi(say, options.apply, { same: options.same, ask: options.ask }));
+  const { settings, vault, ui, index, importer } = session(host, options.apply, say, new AutoUi(say, options.apply, { same: options.same, ask: options.ask }));
   const topics = (options.topics ?? []).map((name) => {
     const note = vault.resolveLink(name, "");
     if (!note) throw new Error(`No note named "${name}" to link as a topic`);
     return note.basename;
   });
-  const file = await importer.run(options.id, { topics, arxivId: options.arxiv });
+  const pdf = options.pdf?.replace(/^\/+/, "");
+  if (pdf && !vault.exists(pdf)) throw new Error(`No file at ${pdf}`);
+  if (options.cover && !pdf) throw new Error("cover cuts Figure 1 from a PDF: give it with pdf=");
+  let id = options.id;
+  if (!id) {
+    if (!pdf) throw new Error("name the paper: id=<DOI|arXiv>, or pdf=<file> to read it there");
+    if (!host.pdf) throw new Error("reading a PDF needs Obsidian: name the paper with id=");
+    id = identifierOf(await host.pdf.pages(pdf, 2));
+    say(`${pdf}: ${id}`);
+  }
+  const file = await importer.run(id, { topics, arxivId: options.arxiv });
   for (const decision of ui.decisions) say(`  · ${decision}`);
   for (const name of ui.unusedSame) say(`  ! same="${name}": no question about this author; name them as the preview does, before the colon`);
-  if (!file) return out.join("\n");
+  const cited = [...new Set((importer.last?.references ?? []).map((doi) => index.doiIndex.get(normDoi(doi))?.basename).filter(Boolean))];
+  if (cited.length) say(`  · cites, in the vault: ${cited.map((name) => `[[${name}]]`).join(", ")}`);
+
+  const note = file ?? importer.existing;
+  const moves: string[] = [];
+  let trashed = false;
+  let duplicate = false;
+  if (note && pdf) {
+    const pdfs = file ? [] : linkedFiles(vault, note, PROP.pdf);
+    let same: string | undefined;
+    for (const path of pdfs) if (path === pdf || (await sameBytes(vault, path, pdf))) same = path;
+    if (same && same !== pdf) {
+      say(`  · ${pdf} is the same file as ${same}, which the note links`);
+      duplicate = true;
+      trashed = await vault.trash(pdf);
+      say(trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
+    } else if (same) {
+      say(`  · the note links ${pdf} already`);
+    } else if (pdfs.length) {
+      say(`  · the note links another PDF, ${pdfs.join(", ")}: ${pdf} stays where it is`);
+    } else {
+      const final = await attachPdf(vault, settings, note, pdf, (line) => moves.push(line));
+      if (options.cover) await makeCover(vault, host.pdf, settings, note, { now: pdf, final }, say);
+    }
+    if (options.cover && (same || pdfs.length)) {
+      const first = pdfs[0];
+      await makeCover(vault, host.pdf, settings, note, { now: first, final: first }, say);
+    }
+  }
+  if (!file && !vault.changes.length && !moves.length && !duplicate) return out.join("\n");
   for (const change of vault.changes) say(`${options.apply ? "+" : "?"} ${change.path}  (${change.action})`);
+  say(...moves);
   if (!options.apply) {
     say("", "Preview: nothing written. Run again with apply to write the notes.");
     return out.join("\n");
   }
-  const fm = vault.frontmatter(file.path) ?? {};
+  const fm = vault.frontmatter(note!.path) ?? {};
   const source = provenanceOf({ doi: fm[PROP.doi] ?? undefined, arxivId: fm[PROP.arxiv] ?? undefined });
-  await log(host, "lit-add", `${citekeyOf(fm[PROP.bibtex]) ?? file.basename} — ${fm[PROP.title]}`, [
+  await log(host, file ? "lit-add" : "lit-files", `${citekeyOf(fm[PROP.bibtex]) ?? note!.basename} — ${fm[PROP.title]}`, [
     `source: ${source.source} ${source.ident}`,
     ...ui.decisions,
     ...vault.changes.map(label),
+    ...moves.map((line) => line.replace(/^\+ /, "moved: ").replace(/\s+\(move\)$/, "")),
+    ...(trashed ? [`trashed: ${pdf}, the same file as the PDF the note links`] : []),
   ]);
-  say("", `${vault.changes.length} notes written.`);
+  const files = vault.changes.filter((change) => !change.path.toLowerCase().endsWith(".md")).length;
+  say("", files ? `${vault.changes.length - files} notes and ${files} files written.` : `${vault.changes.length} notes written.`);
+  return out.join("\n");
+}
+
+export interface CoverOptions {
+  /** One reference; without it, every reference with a PDF and no cover. */
+  note?: NoteQuery;
+  apply: boolean;
+}
+
+/** Covers from Figure 1 of the first PDF of references that have none. */
+export async function coverCommand(host: CommandHost, options: CoverOptions): Promise<string> {
+  const out: string[] = [];
+  const say = (...lines: string[]) => out.push(...lines);
+  const { settings, vault } = session(host, options.apply, say);
+  const property = settings.coverProperty.trim();
+  if (!property) throw new Error("covers need a cover property in the settings");
+  const target = findNote(host.vault, options.note ?? {});
+  const notes = target
+    ? [target]
+    : allReferences(vault, settings.templatesFolder).filter((note) => !vault.frontmatter(note.path)?.[property] && linkedFiles(vault, note, PROP.pdf).length);
+  let made = 0;
+  for (const note of notes) {
+    const [pdf] = linkedFiles(vault, note, PROP.pdf);
+    if (!pdf) {
+      if (target) say(`  ! ${note.basename}: no PDF linked`);
+      continue;
+    }
+    say(note.path);
+    if (await makeCover(vault, host.pdf, settings, note, { now: pdf, final: pdf }, say)) made++;
+  }
+  for (const change of vault.changes) say(`${options.apply ? "+" : "?"} ${change.path}  (${change.action})`);
+  if (!made) {
+    say(notes.length ? "No cover made." : "Every reference with a PDF has a cover.");
+    return out.join("\n");
+  }
+  if (!options.apply) {
+    say("", `Preview: ${made} covers, nothing written. Run again with apply to write them.`);
+    return out.join("\n");
+  }
+  await log(host, "lit-cover", `${made} covers from Figure 1`, vault.changes.map(label));
+  say("", `${made} covers written.`);
   return out.join("\n");
 }
 

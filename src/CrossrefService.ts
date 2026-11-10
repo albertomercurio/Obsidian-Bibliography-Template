@@ -137,6 +137,9 @@ export class CrossrefService {
     const abstract: string | undefined = work.abstract
       ? convertMathML(work.abstract)
       : undefined;
+    const references: string[] = (work.reference ?? [])
+      .map((entry: any) => (typeof entry?.DOI === "string" ? entry.DOI.trim() : ""))
+      .filter(Boolean);
 
     const year: number =
       work.published?.["date-parts"]?.[0]?.[0] ??
@@ -173,6 +176,7 @@ export class CrossrefService {
       isbn: work.ISBN?.[0]?.replace(/-/g, ""),
       itemType,
       abstract,
+      references: references.length ? references : undefined,
       titleLatex,
     };
 

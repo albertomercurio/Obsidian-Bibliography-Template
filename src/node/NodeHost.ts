@@ -19,6 +19,8 @@ function basenameOf(path: string): string {
 export class NodeVault implements VaultPort {
   private texts = new Map<string, string>();
   private frontmatters = new Map<string, Frontmatter | undefined>();
+  /** Other files, such as PDFs: links can point to them. */
+  protected files = new Set<string>();
 
   constructor(readonly root: string) {
     this.scan("");
@@ -32,6 +34,8 @@ export class NodeVault implements VaultPort {
         this.scan(rel);
       } else if (entry.name.toLowerCase().endsWith(".md")) {
         this.store(rel, readFileSync(join(this.root, rel), "utf8"));
+      } else {
+        this.files.add(rel);
       }
     }
   }
@@ -104,14 +108,30 @@ export class NodeVault implements VaultPort {
     if (next !== text) this.write(rel, next);
   }
 
-  async rename(): Promise<NoteRef | null> {
+  async rename(_path: string, _newPath: string): Promise<NoteRef | null> {
     return null; // only Obsidian can update the links
+  }
+
+  async readBinary(path: string): Promise<ArrayBuffer> {
+    const bytes = readFileSync(join(this.root, path));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }
+
+  async createBinary(path: string, data: ArrayBuffer): Promise<void> {
+    if (this.exists(path)) throw new Error(`Already exists: ${path}`);
+    mkdirSync(join(this.root, posix.dirname(path)), { recursive: true });
+    writeFileSync(join(this.root, path), Buffer.from(data));
+    this.files.add(nfc(path));
+  }
+
+  async trash(_path: string): Promise<boolean> {
+    return false; // the trash is Obsidian's
   }
 
   resolveLink(linkpath: string, sourcePath: string): NoteRef | null {
     const target = nfc(linkpath.split("|")[0].split("#")[0].trim()).toLowerCase();
     if (!target) return null;
-    const paths = [...this.texts.keys()];
+    const paths = [...this.texts.keys(), ...this.files];
     const byPath = paths.find((p) => p.toLowerCase() === target || p.toLowerCase() === `${target}.md`);
     const hits = byPath ? [byPath] : paths.filter((p) => basenameOf(p).toLowerCase() === posix.basename(target));
     if (!hits.length) return null;
