@@ -115,13 +115,13 @@ function inboxVault(): string {
 
 test("add pdf= reads the DOI, imports, moves the PDF next to the others with the citation key, and cuts a cover", async () => {
   const root = inboxVault();
-  const preview = await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", cover: true, apply: false });
+  const preview = await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], cover: true, apply: false });
   assert.match(preview, new RegExp(`^Inbox/paper\\.pdf: ${DOI.replace(/\./g, "\\.")}$`, "m"));
   assert.match(preview, /^\? Inbox\/paper\.pdf → Files\/Macri2022SpontaneousScatteringRaman\.pdf {2}\(move\)$/m);
   assert.match(preview, /^\? Files\/Macri2022SpontaneousScatteringRaman-cover\.png {2}\(create\)$/m);
   assert.ok(existsSync(join(root, "Inbox/paper.pdf")) && !existsSync(join(root, ARTICLE)), "a preview writes nothing");
 
-  const applied = await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", cover: true, apply: true });
+  const applied = await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], cover: true, apply: true });
   assert.match(applied, /notes and 1 files written\.$/);
   assert.ok(!existsSync(join(root, "Inbox/paper.pdf")));
   assert.equal(readFileSync(join(root, "Files/Macri2022SpontaneousScatteringRaman.pdf"), "utf8"), "%PDF-1.4 the paper");
@@ -132,34 +132,34 @@ test("add pdf= reads the DOI, imports, moves the PDF next to the others with the
   assert.match(readFileSync(join(root, "log.md"), "utf8"), /\n- moved: Inbox\/paper\.pdf → Files\/Macri2022SpontaneousScatteringRaman\.pdf\n/);
 });
 
-test("add pdf= of a paper already there: a copy of its PDF goes to the trash, another PDF stays", async () => {
+test("add pdf= of a paper already there: a copy of its PDF goes to the trash, another PDF is the next one", async () => {
   const root = inboxVault();
-  await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", apply: true });
+  await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], apply: true });
   writeFileSync(join(root, "Inbox/copy.pdf"), "%PDF-1.4 the paper");
   const vault = new MovingVault(root);
-  const preview = await addCommand(host(vault), { pdf: "Inbox/copy.pdf", apply: false });
+  const preview = await addCommand(host(vault), { pdfs: ["Inbox/copy.pdf"], apply: false });
   assert.match(preview, /already exists in your vault/);
   assert.match(preview, /^ {2}· Inbox\/copy\.pdf is the same file as Files\/Macri2022SpontaneousScatteringRaman\.pdf, which the note links$/m);
   assert.match(preview, /with apply, Inbox\/copy\.pdf goes to the trash/);
   assert.deepEqual(vault.trashed, []);
-  const applied = await addCommand(host(vault), { pdf: "Inbox/copy.pdf", apply: true });
+  const applied = await addCommand(host(vault), { pdfs: ["Inbox/copy.pdf"], apply: true });
   assert.match(applied, /- Inbox\/copy\.pdf: moved to the trash/);
   assert.deepEqual(vault.trashed, ["Inbox/copy.pdf"]);
 
   writeFileSync(join(root, "Inbox/download.pdf"), "%PDF-1.4 the paper downloaded on another day");
-  const download = await addCommand(host(vault), { pdf: "Inbox/download.pdf", apply: true });
+  const download = await addCommand(host(vault), { pdfs: ["Inbox/download.pdf"], apply: true });
   assert.match(download, /Inbox\/download\.pdf is another download of Files\/Macri2022SpontaneousScatteringRaman\.pdf, which the note links/);
   assert.deepEqual(vault.trashed, ["Inbox/copy.pdf", "Inbox/download.pdf"]);
 
   writeFileSync(join(root, "Inbox/other.pdf"), "%PDF-1.4 another version");
-  const other = await addCommand(host(new MovingVault(root)), { pdf: "Inbox/other.pdf", apply: true });
-  assert.match(other, /the note links another PDF, Files\/Macri2022SpontaneousScatteringRaman\.pdf: Inbox\/other\.pdf stays where it is/);
-  assert.ok(existsSync(join(root, "Inbox/other.pdf")));
+  const other = await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/other.pdf"], apply: true });
+  assert.match(other, /Inbox\/other\.pdf → Files\/Macri2022SpontaneousScatteringRaman-2\.pdf {2}\(move\)/);
+  assert.deepEqual(props(root, ARTICLE).PDF, ["[[Macri2022SpontaneousScatteringRaman.pdf]]", "[[Macri2022SpontaneousScatteringRaman-2.pdf]]"]);
 });
 
 test("cover makes covers for references with a PDF and none, and only with apply", async () => {
   const root = inboxVault();
-  await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", apply: true });
+  await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], apply: true });
   const preview = await coverCommand(host(new MovingVault(root)), { apply: false });
   assert.match(preview, /^ {2}· cover: Figure 1, page 2 of the PDF$/m);
   assert.match(preview, /Preview: 1 covers, nothing written/);
@@ -172,7 +172,7 @@ test("cover makes covers for references with a PDF and none, and only with apply
 
 test("an image as the cover: <citation key>-cover next to the PDF, replacing the old one", async () => {
   const root = inboxVault();
-  await addCommand(host(new MovingVault(root)), { pdf: "Inbox/paper.pdf", cover: true, apply: true });
+  await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], cover: true, apply: true });
   assert.equal(props(root, ARTICLE).Cover, "[[Macri2022SpontaneousScatteringRaman-cover.png]]");
   const vault = new MovingVault(root);
   const staged = new StagedVault(vault, nodeYaml, true);
@@ -188,4 +188,37 @@ test("an image as the cover: <citation key>-cover next to the PDF, replacing the
   await saveCover(new StagedVault(vault, nodeYaml, true), settings, note, { data: png, ext: "jpg" }, () => {});
   assert.deepEqual([...readFileSync(join(root, "Files/Macri2022SpontaneousScatteringRaman-cover.jpg"))], [137, 80, 78, 71, 1], "a cover of the same name is replaced");
   assert.equal(vault.trashed.length, 1);
+});
+
+test("several PDFs: the first is <citation key>.pdf, the others -2, -3…, at the import or later", async () => {
+  const root = inboxVault();
+  writeFileSync(join(root, "Inbox/supmat.pdf"), "%PDF-1.4 the supplemental material");
+  writeFileSync(join(root, "Inbox/data.pdf"), "%PDF-1.4 the data");
+  const preview = await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf", "Inbox/supmat.pdf", "Inbox/data.pdf"], apply: false });
+  assert.match(preview, /^\? Inbox\/paper\.pdf → Files\/Macri2022SpontaneousScatteringRaman\.pdf {2}\(move\)$/m);
+  assert.match(preview, /^\? Inbox\/supmat\.pdf → Files\/Macri2022SpontaneousScatteringRaman-2\.pdf {2}\(move\)$/m);
+  assert.match(preview, /^\? Inbox\/data\.pdf → Files\/Macri2022SpontaneousScatteringRaman-3\.pdf {2}\(move\)$/m, "a preview counts the names it plans");
+  await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf", "Inbox/supmat.pdf"], apply: true });
+  assert.deepEqual(props(root, ARTICLE).PDF, ["[[Macri2022SpontaneousScatteringRaman.pdf]]", "[[Macri2022SpontaneousScatteringRaman-2.pdf]]"]);
+
+  // Later, by DOI (supplementary material seldom prints it): the next number.
+  await addCommand(host(new MovingVault(root)), { id: DOI, pdfs: ["Inbox/data.pdf"], apply: true });
+  assert.deepEqual(props(root, ARTICLE).PDF.slice(2), ["[[Macri2022SpontaneousScatteringRaman-3.pdf]]"]);
+
+  // A copy of any of them goes to the trash.
+  writeFileSync(join(root, "Inbox/again.pdf"), "%PDF-1.4 the supplemental material");
+  const vault = new MovingVault(root);
+  await addCommand(host(vault), { id: DOI, pdfs: ["Inbox/again.pdf"], apply: true });
+  assert.deepEqual(vault.trashed, ["Inbox/again.pdf"]);
+  assert.equal(props(root, ARTICLE).PDF.length, 3);
+});
+
+test("a cover comes from the main PDF, also when only more PDFs are added", async () => {
+  const root = inboxVault();
+  await addCommand(host(new MovingVault(root)), { pdfs: ["Inbox/paper.pdf"], apply: true });
+  writeFileSync(join(root, "Inbox/supmat.pdf"), "%PDF-1.4 the supplemental material");
+  await addCommand(host(new MovingVault(root)), { id: DOI, pdfs: ["Inbox/supmat.pdf"], cover: true, apply: true });
+  const fm = props(root, ARTICLE);
+  assert.deepEqual(fm.PDF, ["[[Macri2022SpontaneousScatteringRaman.pdf]]", "[[Macri2022SpontaneousScatteringRaman-2.pdf]]"]);
+  assert.equal(fm.Cover, "[[Macri2022SpontaneousScatteringRaman-cover.png]]");
 });
