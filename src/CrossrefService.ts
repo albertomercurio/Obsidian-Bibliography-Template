@@ -8,13 +8,26 @@ import { OpenLibraryService } from "./OpenLibraryService";
 // ---------------------------------------------------------------------------
 
 /**
+ * Crossref lays out the XML of a formula on lines of its own:
+ * "in a \n<mml:math>…</mml:math>\n-symmetric". Such a line break is a space
+ * between words ("Superfluid\n <math>\n dynamics"), but not before a hyphen
+ * or punctuation after the formula, nor after a hyphen or bracket before it:
+ * "a PT-symmetric", "anti-PT-symmetric", not "a PT -symmetric".
+ */
+function joinMath(raw: string): string {
+  return raw
+    .replace(/(<\/(?:[a-z]+:)?math>)\s*\n\s*(?=[-,.;:)\]'’])/gi, "$1")
+    .replace(/([-(\[])\s*\n\s*(?=<(?:[a-z]+:)?math[\s>])/gi, "$1");
+}
+
+/**
  * Converts MathML fragments embedded in a string to inline LaTeX ($...$),
  * then strips any remaining XML tags and decodes HTML entities.
  * Used for bibtex title and note abstract.
  */
 function convertMathML(raw: string): string {
   // Replace each <prefix:math ...>...</prefix:math> block with $latex$
-  const withLatex = raw.replace(
+  const withLatex = joinMath(raw).replace(
     /<([a-z]+):math[\s\S]*?<\/\1:math>/gi,
     (block, prefix) => {
       const unprefixed = block.replace(new RegExp(`\\b${prefix}:`, "g"), "");
@@ -47,7 +60,7 @@ function convertMathML(raw: string): string {
 }
 
 function cleanMarkup(raw: string): string {
-  return raw
+  return joinMath(raw)
     .replace(/<[^>]*>/g, "")          // strip all XML/HTML tags (MathML, JATS…)
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
