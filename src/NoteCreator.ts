@@ -2,7 +2,7 @@ import type { Frontmatter, NoteRef, Ui, VaultPort } from "./ports";
 import type { PaperMetadata, PluginSettings } from "./types";
 import { VaultIndex } from "./VaultIndex";
 import { mergedFields, valueOf, type MergeField, type PersonFieldKey } from "./AuthorMerge";
-import { abstractCallout, DEFAULT_TEMPLATES, parseTemplate, PROP, setSection, TYPES, type NoteTemplate, type Provenance } from "./schema";
+import { abstractCallout, DEFAULT_TEMPLATES, parseTemplate, PROP, setLead, setSection, TYPES, type NoteTemplate, type Provenance } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Filename sanitisation
@@ -272,13 +272,14 @@ export class NoteCreator {
     totalAuthors?: number;
     topics?: string[];
   }): Promise<NoteRef> {
-    const { metadata, bibtex, authorNames, journalName, provenance } = params;
+    const { metadata, bibtex, authorNames, journalName } = params;
     const path = this.publicationPath(metadata);
     const basename = path.slice(path.lastIndexOf("/") + 1, -3);
 
-    const extra = params.totalAuthors && params.totalAuthors > authorNames.length
-      ? [`Only the first of ${params.totalAuthors} authors is linked in Authors; the full list is in BibTeX.`]
-      : [];
+    const remark = params.totalAuthors && params.totalAuthors > authorNames.length
+      ? `Only the first of ${params.totalAuthors} authors is linked in Authors; the full list is in BibTeX.`
+      : "";
+    const lead = [abstractCallout(metadata.abstract), remark].filter(Boolean).join("\n\n");
     return this.createTyped(TYPES.article, basename, {
       [PROP.title]: metadata.title,
       [PROP.authors]: authorNames.map(wikilink),
@@ -290,7 +291,7 @@ export class NoteCreator {
       [PROP.read]: false,
       [PROP.topics]: params.topics?.length ? params.topics.map(wikilink) : null,
       [PROP.bibtex]: bibtex,
-    }, (body) => setSection(body, "Abstract", abstractCallout(metadata.abstract, provenance, extra)));
+    }, (body) => setLead(body, lead));
   }
 
   // --------------------------------------------------------------------------

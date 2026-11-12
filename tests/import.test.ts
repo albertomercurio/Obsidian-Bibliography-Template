@@ -44,7 +44,8 @@ test("import writes article, new authors and BibTeX property in order, without a
   assert.match(fm.BibTeX, /^@article\{Macri2022SpontaneousScatteringRaman,\n/);
   assert.match(fm.BibTeX, /journal = \{Phys\. Rev\. Lett\.\}/);
   assert.match(text, /\nBibTeX: \|-\n  @article\{/);
-  assert.match(text, /> \[!quote\] Crossref · DOI 10\.1103\/physrevlett\.129\.273602 · retrieved/);
+  assert.match(splitNote(text).body, /^> \[!abstract\]\n> \S/);
+  assert.doesNotMatch(text, /\[!quote\]|retrieved/);
   assert.doesNotMatch(text, /## BibTeX/);
   const person = parseFrontmatter(splitNote(readFileSync(join(root, "People/Vincenzo Macrì.md"), "utf8")).yaml)!;
   assert.deepEqual(Object.keys(person), ["Type", "First Name", "Last Name", "ORCID", "Email", "Affiliations", "Relationship"]);
@@ -64,7 +65,7 @@ test("a template file sets properties, their order and the body; templates are n
   const fm = parseFrontmatter(splitNote(text).yaml)!;
   assert.deepEqual(Object.keys(fm).slice(0, 6), ["Type", "Year", "Title", "Authors", "Extra", "BibTeX"]);
   assert.equal(fm.Extra, null);
-  assert.match(text, /## Abstract\n\n> \[!quote\][\s\S]*## My Section/);
+  assert.match(text, /## Abstract\n\n> \[!abstract\][\s\S]*## My Section/);
 });
 
 test("without apply nothing reaches the disk, and a second import is refused", async () => {

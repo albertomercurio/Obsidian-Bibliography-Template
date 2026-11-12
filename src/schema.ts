@@ -44,7 +44,7 @@ export interface NoteTemplate {
 export const DEFAULT_TEMPLATES: Record<string, NoteTemplate> = {
   [TYPES.article]: {
     keys: [PROP.title, PROP.authors, PROP.journal, PROP.year, PROP.doi, PROP.arxiv, PROP.pdf, PROP.read, PROP.topics, PROP.bibtex],
-    body: "## Abstract\n\n## Notes\n",
+    body: "## Notes\n",
   },
   [TYPES.book]: {
     keys: [PROP.title, PROP.authors, PROP.publisher, PROP.year, PROP.isbn, PROP.doi, PROP.pdf, PROP.read, PROP.topics, PROP.bibtex],
@@ -121,14 +121,23 @@ export function setSection(body: string, heading: string, content: string): stri
 }
 
 /**
- * Abstract as a quote callout, so it stays distinct from the user's own notes;
- * the header records where and when the metadata was retrieved.
+ * The abstract as an `[!abstract]` callout, so it stays distinct from the user's
+ * own notes; empty when the source gives none. Source and date are in the log.
  */
-export function abstractCallout(abstract: string | undefined, prov: Provenance, extraLines: string[] = []): string {
-  const text = (abstract ?? "").trim() || "Not provided by the source.";
-  const lines = text.split(/\n+/).map((l) => `> ${l}`);
-  const extra = extraLines.length ? `\n>\n${extraLines.map((l) => `> ${l}`).join("\n")}` : "";
-  return `> [!quote] ${prov.source} · ${prov.ident} · retrieved ${prov.date}\n${lines.join("\n")}${extra}`;
+export function abstractCallout(abstract: string | undefined): string {
+  const text = (abstract ?? "").trim();
+  return text ? `> [!abstract]\n${text.split(/\n+/).map((l) => `> ${l}`).join("\n")}` : "";
+}
+
+/**
+ * Puts the lead of a reference (abstract, remarks of the import) at the top of
+ * the body; into its `## Abstract` section when the template has one.
+ */
+export function setLead(body: string, lead: string): string {
+  if (!lead.trim()) return body;
+  if (/^## Abstract[ \t]*$/m.test(body)) return setSection(body, "Abstract", lead);
+  const rest = body.replace(/^\s+/, "");
+  return rest ? `${lead}\n\n${rest}` : `${lead}\n`;
 }
 
 // ---------------------------------------------------------------------------

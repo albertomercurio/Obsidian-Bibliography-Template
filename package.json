@@ -1,6 +1,6 @@
 {
   "name": "research-importer",
-  "version": "2.9.2",
+  "version": "2.10.0",
   "description": "Obsidian plugin: Research Literature Manager",
   "scripts": {
     "dev": "node esbuild.config.mjs",

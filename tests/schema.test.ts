@@ -1,14 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { abstractCallout, citekeyOf, provenanceOf, setSection } from "../src/schema";
+import { abstractCallout, citekeyOf, provenanceOf, setLead, setSection } from "../src/schema";
 import { planAuthorMerge, mergedFields } from "../src/AuthorMerge";
 
-const prov = { source: "Crossref", ident: "DOI 10.1/x", date: "2026-10-26" };
-const BODY = "## Abstract\n\n## My Notes\n";
+test("the abstract goes in an [!abstract] callout at the top, LaTeX dollars literal", () => {
+  const out = setLead("## Notes\n", abstractCallout("Energy $E = mc^2$ and $$x$$."));
+  assert.equal(out, "> [!abstract]\n> Energy $E = mc^2$ and $$x$$.\n\n## Notes\n");
+});
 
-test("setSection fills an empty section and keeps LaTeX dollars literal", () => {
-  const out = setSection(BODY, "Abstract", abstractCallout("Energy $E = mc^2$ and $$x$$.", prov));
-  assert.match(out, /## Abstract\n\n> \[!quote\] Crossref · DOI 10\.1\/x · retrieved 2026-10-26\n> Energy \$E = mc\^2\$ and \$\$x\$\$\.\n\n## My Notes/);
+test("a template with an Abstract section gets the callout inside it", () => {
+  const out = setLead("## Abstract\n\n## My Notes\n", abstractCallout("A.\n\nB."));
+  assert.equal(out, "## Abstract\n\n> [!abstract]\n> A.\n> B.\n\n## My Notes\n");
 });
 
 test("setSection replaces an existing section and appends a missing one", () => {
@@ -16,9 +18,10 @@ test("setSection replaces an existing section and appends a missing one", () => 
   assert.equal(setSection("text\n", "Sources", "- a"), "text\n\n## Sources\n\n- a\n");
 });
 
-test("abstract callout records the source and notes a truncated author list", () => {
-  const out = abstractCallout(undefined, prov, ["Only the first of 30 authors is linked."]);
-  assert.equal(out, "> [!quote] Crossref · DOI 10.1/x · retrieved 2026-10-26\n> Not provided by the source.\n>\n> Only the first of 30 authors is linked.");
+test("no abstract, no callout; an empty lead leaves the body as it is", () => {
+  assert.equal(abstractCallout(undefined), "");
+  assert.equal(setLead("## Notes\n", ""), "## Notes\n");
+  assert.equal(setLead("", "Only the first of 30 authors is linked."), "Only the first of 30 authors is linked.\n");
 });
 
 test("provenance: journal DOIs come from Crossref, arXiv DOIs from arXiv", () => {
