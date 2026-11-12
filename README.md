@@ -4,7 +4,7 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 
 ## What it does
 
-- **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist.
+- **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist. A link works too (doi.org, arxiv.org), and so does an arXiv ID of before 2007, such as `quant-ph/0101001`. An arXiv ID gives the published version when Semantic Scholar or the arXiv record names its DOI.
 - **Import from a PDF.** In the import window, choose a PDF of the vault that no note links yet, or right-click a PDF: *Import paper from this PDF* (also a command for the open PDF). The DOI can stay empty: the plugin reads it in the PDF. After the import the PDF moves to the PDF folder of the settings, named after the citation key, and the note links it; a copy of a PDF the note already links goes to the trash, and so does another download of it (the same text in every page). With a cover property in the settings, the window also offers a cover: Figure 1 of the PDF, or the image in the clipboard, such as a screenshot.
 - **More PDFs per paper** (supplementary material, other versions): below the main PDF the window lists the others, to tick. The main PDF is `<citation key>.pdf`, the others `<citation key>-2.pdf`, `-3.pdf`…, linked in that order.
 - **Add PDFs or a cover** to a reference already in the vault: right-click it (or a command for the open note). The window opens with its DOI or arXiv id, and nothing is imported again.
@@ -13,7 +13,7 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 - **Check the active reference against its source:** compares title, authors, journal, year, DOI and the BibTeX content, and restores them from the source if you confirm. Your notes, `Read`, `Topics` and the citation key are kept.
 - **Check all references:** the same comparison on the whole vault. It offers to add what notes are missing, such as an article number in the BibTeX, and creates no notes. Where a note and its source disagree it changes nothing and lists them, because a source can be wrong too: decide one note at a time with the command above.
 - **Check all references offline:** each note against its own BibTeX entry (DOI, year, title, arXiv id, authors, journal), entries missing, unreadable or left in the body, and the same work twice (DOI, arXiv id, citation key, or the same title with no link between the notes). No network, nothing changed: it lists the problems, and a click opens the note.
-- **Refresh metadata for active note:** turns a preprint into its published version.
+- **Refresh metadata for active note:** turns a preprint into its published version, found by Semantic Scholar or in the arXiv record.
 - **Re-generate BibTeX** for all articles and books.
 - **Copy the BibTeX** of all references, or of those linked to the active note: the references it cites, and those naming it as author, topic or journal.
 
