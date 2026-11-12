@@ -84,11 +84,15 @@ async function log(host: CommandHost, kind: string, title: string, details: stri
 }
 
 export interface AddOptions {
-  /** DOI or arXiv id; without it, the one printed in `pdf`. */
+  /** DOI or arXiv id; without it, the one printed in the first PDF. */
   id?: string;
-  /** A PDF of the paper in the vault: moved to the PDF folder, named after the citation key, and linked. */
-  pdf?: string;
-  /** Also make a cover from Figure 1 of the PDF. */
+  /**
+   * PDFs of the paper in the vault, moved to the PDF folder and linked: the
+   * first is the main one, `<citation key>.pdf`, when the note has none; the
+   * others are `<citation key>-2.pdf`, `-3.pdf`…
+   */
+  pdfs?: string[];
+  /** Also make a cover from Figure 1 of the main PDF. */
   cover?: boolean;
   /** Names of topic notes to link; each must exist. */
   topics?: string[];
@@ -110,15 +114,14 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
     if (!note) throw new Error(`No note named "${name}" to link as a topic`);
     return note.basename;
   });
-  const pdf = options.pdf?.replace(/^\/+/, "");
-  if (pdf && !vault.exists(pdf)) throw new Error(`No file at ${pdf}`);
-  if (options.cover && !pdf) throw new Error("cover cuts Figure 1 from a PDF: give it with pdf=");
+  const pdfs = (options.pdfs ?? []).map((path) => path.replace(/^\/+/, ""));
+  for (const path of pdfs) if (!vault.exists(path)) throw new Error(`No file at ${path}`);
   let id = options.id;
   if (!id) {
-    if (!pdf) throw new Error("name the paper: id=<DOI|arXiv>, or pdf=<file> to read it there");
+    if (!pdfs.length) throw new Error("name the paper: id=<DOI|arXiv>, or pdf=<file> to read it there");
     if (!host.pdf) throw new Error("reading a PDF needs Obsidian: name the paper with id=");
-    id = identifierOf(await host.pdf.pages(pdf, 2));
-    say(`${pdf}: ${id}`);
+    id = identifierOf(await host.pdf.pages(pdfs[0], 2));
+    say(`${pdfs[0]}: ${id}`);
   }
   const file = await importer.run(id, { topics, arxivId: options.arxiv });
   for (const decision of ui.decisions) say(`  · ${decision}`);
@@ -127,7 +130,7 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
   let moves: string[] = [];
   let trashed = false;
   let duplicate = false;
-  if (note && pdf) ({ moves, trashed, duplicate } = await addFiles(vault, host.pdf, settings, { note, created: Boolean(file), pdf, cover: options.cover }, say));
+  if (note && (pdfs.length || options.cover)) ({ moves, trashed, duplicate } = await addFiles(vault, host.pdf, settings, { note, pdfs, cover: options.cover }, say));
   if (!file && !vault.changes.length && !moves.length && !duplicate) return out.join("\n");
   for (const change of vault.changes) say(`${options.apply ? "+" : "?"} ${change.path}  (${change.action})`);
   say(...moves);
@@ -142,7 +145,7 @@ export async function addCommand(host: CommandHost, options: AddOptions): Promis
     ...ui.decisions,
     ...vault.changes.map(label),
     ...moves.map((line) => line.replace(/^\+ /, "moved: ").replace(/\s+\(move\)$/, "")),
-    ...(trashed ? [`trashed: ${pdf}, a copy of the PDF the note links`] : []),
+    ...(trashed ? [`trashed: a copy of a PDF the note links (${pdfs.join(", ")})`] : []),
   ]);
   const files = vault.changes.filter((change) => !change.path.toLowerCase().endsWith(".md")).length;
   say("", files ? `${vault.changes.length - files} notes and ${files} files written.` : `${vault.changes.length} notes written.`);

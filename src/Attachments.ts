@@ -36,10 +36,11 @@ function keyOf(vault: Files, note: NoteRef): string {
   return citekeyOf(vault.frontmatter(note.path)?.[PROP.bibtex]) ?? note.basename;
 }
 
-/** `<folder>/<name><ext>`, or with -2, -3… when that is taken by another file. */
-function freePath(vault: Files, folder: string, name: string, ext: string, self?: string): string {
+/** `<folder>/<name><ext>`, or with -2, -3… when that is taken by another file (or planned in this run). */
+function freePath(vault: Files, folder: string, name: string, ext: string, self?: string, taken = new Set<string>()): string {
+  const used = (path: string) => (vault.exists(path) || taken.has(path)) && path !== self;
   let path = join(folder, `${name}${ext}`);
-  for (let i = 2; vault.exists(path) && path !== self; i++) path = join(folder, `${name}-${i}${ext}`);
+  for (let i = 2; used(path); i++) path = join(folder, `${name}-${i}${ext}`);
   return path;
 }
 
@@ -58,14 +59,34 @@ export async function sameBytes(vault: Files, a: string, b: string): Promise<boo
   return true;
 }
 
+/** `<folder>/<name>-n<ext>`, the first n from 2 that no other file takes (or is planned in this run). */
+function nextPath(vault: Files, folder: string, name: string, ext: string, self?: string, taken = new Set<string>()): string {
+  const used = (path: string) => (vault.exists(path) || taken.has(path)) && path !== self;
+  let path = join(folder, `${name}-2${ext}`);
+  for (let i = 3; used(path); i++) path = join(folder, `${name}-${i}${ext}`);
+  return path;
+}
+
 /**
  * Moves the PDF to the PDF folder of the settings (or leaves it in its own),
- * named after the citation key, and adds it to the note's PDF property.
- * Returns where the PDF is, or will be after `apply`.
+ * named after the citation key, and adds it to the note's PDF property. The
+ * main PDF, the first one, is `<citation key>.pdf`; the others follow as
+ * `<citation key>-2.pdf`, `-3.pdf`… Returns where the PDF is, or will be
+ * after `apply`.
  */
-export async function attachPdf(vault: Files, settings: PluginSettings, note: NoteRef, pdf: string, say: (line: string) => void): Promise<string> {
+export async function attachPdf(
+  vault: Files,
+  settings: PluginSettings,
+  note: NoteRef,
+  pdf: string,
+  say: (line: string) => void,
+  main: boolean,
+  taken = new Set<string>()
+): Promise<string> {
   const folder = settings.pdfFolder.trim().replace(/\/+$/, "") || folderOf(pdf);
-  let path = freePath(vault, folder, keyOf(vault, note), ".pdf", pdf);
+  const key = keyOf(vault, note);
+  let path = main ? freePath(vault, folder, key, ".pdf", pdf, taken) : nextPath(vault, folder, key, ".pdf", pdf, taken);
+  taken.add(path);
   if (path !== pdf) {
     await vault.ensureFolder(folder);
     const moved = await vault.rename(pdf, path);
@@ -127,7 +148,7 @@ export async function makeCover(
 }
 
 export interface FilesResult {
-  /** The PDF was a copy of one the note links. */
+  /** A PDF was a copy of one the note links. */
   duplicate: boolean;
   trashed: boolean;
   /** "? a → b  (move)" lines, for the output. */
@@ -135,42 +156,70 @@ export interface FilesResult {
 }
 
 /**
- * After an import: the PDF of the paper and, if asked, its cover. A new note,
- * or an existing one without a PDF, gets the PDF; a copy of a PDF the note
- * links goes to the trash; another PDF stays where it is.
+ * Places one PDF of the note: a copy of a PDF it links (byte for byte, or
+ * another download with the same text) goes to the trash; any other is moved
+ * and linked, as the main PDF when the note has none yet, else as the next.
+ * Returns where the PDF is now and after `apply`.
+ */
+async function placePdf(
+  vault: Files,
+  pdfPort: PdfPort | undefined,
+  settings: PluginSettings,
+  note: NoteRef,
+  pdf: string,
+  placed: number,
+  taken: Set<string>,
+  result: FilesResult,
+  say: (line: string) => void
+): Promise<{ now: string; final: string }> {
+  const pdfs = linkedFiles(vault, note, PROP.pdf);
+  if (pdfs.includes(pdf)) {
+    say(`  · the note links ${pdf} already`);
+    return { now: pdf, final: pdf };
+  }
+  let same: string | undefined;
+  let how = "the same file as";
+  for (const path of pdfs) if (await sameBytes(vault, path, pdf)) same = path;
+  if (!same && pdfPort) {
+    for (const path of pdfs) if (await sameText(pdfPort, path, pdf)) [same, how] = [path, "another download of"];
+  }
+  if (same) {
+    say(`  · ${pdf} is ${how} ${same}, which the note links`);
+    result.duplicate = true;
+    const trashed = await vault.trash(pdf);
+    result.trashed ||= trashed;
+    say(trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
+    return { now: same, final: same };
+  }
+  // In a preview the PDFs placed before are not files yet: they count too.
+  const main = pdfs.length === 0 && placed === 0;
+  const final = await attachPdf(vault, settings, note, pdf, (line) => result.moves.push(line), main, taken);
+  // With apply the PDF has moved already; a preview finds it where it was.
+  return { now: vault.apply ? final : pdf, final };
+}
+
+/**
+ * After an import: the PDFs of the paper, the first the main one when the note
+ * has none, and, if asked, a cover from Figure 1 of the main PDF.
  */
 export async function addFiles(
   vault: Files,
   pdfPort: PdfPort | undefined,
   settings: PluginSettings,
-  options: { note: NoteRef; created: boolean; pdf: string; cover?: boolean },
+  options: { note: NoteRef; pdfs?: string[]; cover?: boolean },
   say: (line: string) => void
 ): Promise<FilesResult> {
-  const { note, pdf } = options;
+  const { note } = options;
   const result: FilesResult = { duplicate: false, trashed: false, moves: [] };
-  const pdfs = options.created ? [] : linkedFiles(vault, note, PROP.pdf);
-  let same: string | undefined;
-  let how = "the same file as";
-  for (const path of pdfs) if (path === pdf || (await sameBytes(vault, path, pdf))) same = path;
-  if (!same && pdfPort) {
-    for (const path of pdfs) if (await sameText(pdfPort, path, pdf)) [same, how] = [path, "another download of"];
+  const hadPdf = linkedFiles(vault, note, PROP.pdf)[0];
+  const placed: { now: string; final: string }[] = [];
+  const taken = new Set<string>();
+  for (const pdf of options.pdfs ?? []) placed.push(await placePdf(vault, pdfPort, settings, note, pdf, placed.length, taken, result, say));
+  if (options.cover) {
+    const main = hadPdf ? { now: hadPdf, final: hadPdf } : placed[0];
+    if (main) await makeCover(vault, pdfPort, settings, note, main, say);
+    else say("  ! no PDF to cut a cover from");
   }
-  if (same && same !== pdf) {
-    say(`  · ${pdf} is ${how} ${same}, which the note links`);
-    result.duplicate = true;
-    result.trashed = await vault.trash(pdf);
-    say(result.trashed ? `  - ${pdf}: moved to the trash` : `  · with apply, ${pdf} goes to the trash`);
-  } else if (same) {
-    say(`  · the note links ${pdf} already`);
-  } else if (pdfs.length) {
-    say(`  · the note links another PDF, ${pdfs.join(", ")}: ${pdf} stays where it is`);
-  } else {
-    const final = await attachPdf(vault, settings, note, pdf, (line) => result.moves.push(line));
-    // With apply the PDF has moved already; a preview finds it where it was.
-    if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: vault.apply ? final : pdf, final }, say);
-    return result;
-  }
-  if (options.cover) await makeCover(vault, pdfPort, settings, note, { now: pdfs[0], final: pdfs[0] }, say);
   return result;
 }
 

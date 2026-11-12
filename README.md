@@ -6,6 +6,8 @@ An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with
 
 - **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist. A link works too (doi.org, arxiv.org), and so does an arXiv ID of before 2007, such as `quant-ph/0101001`. An arXiv ID gives the published version when Semantic Scholar or the arXiv record names its DOI.
 - **Import from a PDF.** In the import window, choose a PDF of the vault that no note links yet, or right-click a PDF: *Import paper from this PDF* (also a command for the open PDF). The DOI can stay empty: the plugin reads it in the PDF. After the import the PDF moves to the PDF folder of the settings, named after the citation key, and the note links it; a copy of a PDF the note already links goes to the trash, and so does another download of it (the same text in every page). With a cover property in the settings, the window also offers a cover: Figure 1 of the PDF, or the image in the clipboard, such as a screenshot.
+- **More PDFs per paper** (supplementary material, other versions): below the main PDF the window lists the others, to tick. The main PDF is `<citation key>.pdf`, the others `<citation key>-2.pdf`, `-3.pdf`…, linked in that order.
+- **Add PDFs or a cover** to a reference already in the vault: right-click it (or a command for the open note). The window opens with its DOI or arXiv id, and nothing is imported again.
 - **Make a cover from Figure 1** of the PDF, for the open reference or from its right-click menu, when it has a PDF and no cover.
 - **Paste the cover from the clipboard**, for the open reference or from its right-click menu: the image becomes `<citation key>-cover.<ext>`; replacing a cover asks first, and a cover with another name goes to the trash.
 - **Check the active reference against its source:** compares title, authors, journal, year, DOI and the BibTeX content, and restores them from the source if you confirm. Your notes, `Read`, `Topics` and the citation key are kept.
@@ -27,7 +29,8 @@ With Obsidian 1.12.2 or later the commands are also in Obsidian's command line, 
 
 ```sh
 obsidian-cli research-importer:add id=<DOI|arXiv> [arxiv=<id>] [topics="A, B"] [same="A, B"] [ask] [apply]
-obsidian-cli research-importer:add pdf=<path> [id=<DOI|arXiv>] [cover] [topics=…] [same=…] [apply]   # from a PDF in the vault
+obsidian-cli research-importer:add pdf="<main>, <more>…" [id=<DOI|arXiv>] [cover] [topics=…] [same=…] [apply]   # from PDFs in the vault
+obsidian-cli research-importer:add id=<DOI|arXiv> pdf=<path> [apply]   # one more PDF, such as supplementary material, which seldom prints the DOI
 obsidian-cli research-importer:cover [file=<name>|path=<path>] [apply]           # covers for references without one
 obsidian-cli research-importer:check [file=<name>|path=<path>] [repair] [apply]   # repair adds what is missing
 obsidian-cli research-importer:check file=<name> restore [apply]                  # overwrites one note with the source
@@ -42,7 +45,7 @@ obsidian-cli research-importer:lint [all] [format=json]                         
 - `same="Vincenzo Macrì"`: these authors, named as the preview names them, are the person already in the vault. For agents: show the preview to the user, then run again with their answer.
 - `ask`: the questions open in Obsidian's windows, merge included, while the command waits; ORCID name search follows the settings. `ask apply` imports as the palette does.
 
-`pdf=` reads the DOI, or else the arXiv id, on the first pages of the PDF, unless `id=` names the paper. After the import it moves the PDF to the PDF folder of the settings, named after the citation key (`Macri2022SpontaneousScatteringRaman.pdf`, then `-2`), and adds it to `PDF`. If the paper is already in the vault, the note gains the PDF when it has none; a copy of a PDF the note links, byte for byte or with the same text in every page (another download), goes to the trash with `apply`; another PDF stays where it is, and the output says which.
+`pdf=` takes one or more PDFs, separated by commas, and reads the DOI, or else the arXiv id, on the first pages of the first one, unless `id=` names the paper. After the import it moves them to the PDF folder of the settings and adds them to `PDF`: the first as the main one, `<citation key>.pdf` (`Macri2022SpontaneousScatteringRaman.pdf`), when the note has none; the others, and any PDF added later, as `<citation key>-2.pdf`, `-3.pdf`… A copy of a PDF the note links, byte for byte or with the same text in every page (another download), goes to the trash with `apply`.
 
 `cover`, as an option of `add` or a command of its own, cuts Figure 1 out of the PDF: the picture above the caption ("FIG. 1", "Figure 1.", "Fig. 1 |"), across the caption's width, below the nearest line of prose or the running head, without white margins. It becomes `<citation key>-cover.png` next to the PDF, linked from the cover property. A caption beside its figure, a scanned paper or a figure beyond the sixth page gives no cover, and the output says so. Without `file=`, the command covers every reference with a PDF and no cover.
 

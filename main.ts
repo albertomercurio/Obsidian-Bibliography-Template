@@ -50,10 +50,14 @@ export default class ResearchImporterPlugin extends Plugin {
       })
     );
 
-    const importPaper = (pdf?: string) =>
-      new ImportModal(this.app, { pdfs: this.unlinkedPdfs(pdf), pdf, covers: Boolean(this.settings.coverProperty.trim()) }, (request) => {
-        this.importPaper(request).catch((err) => this.fail("Import", err));
-      }).open();
+    const importPaper = (pdf?: string, reference?: TFile) =>
+      new ImportModal(
+        this.app,
+        { pdfs: this.unlinkedPdfs(pdf), pdf, covers: Boolean(this.settings.coverProperty.trim()), reference: reference && this.identified(reference) },
+        (request) => {
+          this.importPaper(request).catch((err) => this.fail("Import", err));
+        }
+      ).open();
 
     this.addCommand({ id: "import-paper", name: "Import paper from DOI or arXiv ID", callback: () => importPaper() });
     this.addRibbonIcon("book-open", "Import paper", () => importPaper());
@@ -81,6 +85,17 @@ export default class ResearchImporterPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "add-files",
+      name: "Add PDFs or a cover to the active reference",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.identified(file)) return false;
+        if (!checking) importPaper(undefined, file);
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "paste-cover",
       name: "Paste the cover of the active reference from the clipboard",
       checkCallback: (checking) => {
@@ -98,6 +113,9 @@ export default class ResearchImporterPlugin extends Plugin {
         if (file.extension.toLowerCase() === "pdf") {
           menu.addItem((item) => item.setTitle("Import paper from this PDF").setIcon("book-open").onClick(() => importPaper(file.path)));
           return;
+        }
+        if (this.identified(file)) {
+          menu.addItem((item) => item.setTitle("Add PDFs or a cover…").setIcon("paperclip").onClick(() => importPaper(undefined, file)));
         }
         if (this.canCover(file)) {
           menu.addItem((item) =>
@@ -211,8 +229,8 @@ export default class ResearchImporterPlugin extends Plugin {
       "Import a paper from its DOI or arXiv id, or from its PDF, with its authors and journal; preview unless apply",
       {
         id: { value: "<DOI|arXiv>", description: "DOI or arXiv id of the paper (default: the one printed in the PDF)" },
-        pdf: { value: "<path>", description: "A PDF of the paper in the vault: moved to the PDF folder, named after the citation key, and linked; a copy of the PDF a note links already goes to the trash" },
-        cover: { description: "Also make a cover from Figure 1 of the PDF (needs the cover property in the settings)" },
+        pdf: { value: "<paths>", description: "PDFs of the paper in the vault, separated by commas: moved to the PDF folder and linked, the first as <citation key>.pdf when the note has none, the others as <citation key>-2.pdf, -3.pdf…; a copy of a PDF the note links goes to the trash" },
+        cover: { description: "Also make a cover from Figure 1 of the main PDF (needs the cover property in the settings)" },
         arxiv: { value: "<id>", description: "arXiv id of its preprint, when id is the DOI of the published version" },
         topics: { value: "<names>", description: "Topic notes to link, separated by commas" },
         same: { value: "<names>", description: "Authors that are the person already in the vault, named as the preview names them, separated by commas" },
@@ -223,7 +241,7 @@ export default class ResearchImporterPlugin extends Plugin {
         const list = (name: string) => value(params, name)?.split(",").map((item) => item.trim()).filter(Boolean);
         return addCommand(host(), {
           id: value(params, "id"),
-          pdf: value(params, "pdf"),
+          pdfs: list("pdf"),
           cover: on(params, "cover"),
           topics: list("topics"),
           arxiv: value(params, "arxiv"),
@@ -302,14 +320,16 @@ export default class ResearchImporterPlugin extends Plugin {
     // The clipboard first, before anything else can change it.
     const image = request.cover === "clipboard" ? await clipboardImage() : null;
     if (request.cover === "clipboard" && !image) new Notice("No image in the clipboard: no cover.", 6000);
+    const pdfs = [request.pdf, ...request.more].filter((path): path is string => Boolean(path));
     let id = request.id;
-    if (!id && request.pdf) {
+    if (!id && pdfs.length) {
       new Notice("Reading the PDF…", 3000);
-      id = identifierOf(await pdf.pages(request.pdf, 2));
+      id = identifierOf(await pdf.pages(pdfs[0], 2));
     }
-    const file = await this.importer.run(id);
-    const note = file ?? this.importer.existing;
-    if (!note || (!request.pdf && !image)) return;
+    const file = request.note ? null : await this.importer.run(id);
+    const note = request.note ? { path: request.note, basename: request.note.replace(/^.*\//, "").replace(/\.md$/, "") } : (file ?? this.importer.existing);
+    const files = pdfs.length > 0 || request.cover === "figure";
+    if (!note || (!files && !image)) return;
     // The new note's properties reach the metadata cache a moment after it is written.
     const created = this.app.vault.getAbstractFileByPath(note.path);
     for (let i = 0; i < 60 && created instanceof TFile && !this.app.metadataCache.getFileCache(created)?.frontmatter?.[PROP.bibtex]; i++) {
@@ -317,12 +337,20 @@ export default class ResearchImporterPlugin extends Plugin {
     }
     const lines: string[] = [];
     const vault = new StagedVault(this.vaultPort, obsidianYaml, true);
-    const result = request.pdf
-      ? await addFiles(vault, pdf, this.settings, { note, created: Boolean(file), pdf: request.pdf, cover: request.cover === "figure" }, (line) => lines.push(line))
+    const result = files
+      ? await addFiles(vault, pdf, this.settings, { note, pdfs, cover: request.cover === "figure" }, (line) => lines.push(line))
       : { moves: [] };
     if (image) lines.push(`Cover: ${await saveCover(vault, this.settings, note, image, (line) => lines.push(line))}, from the clipboard`);
     const shown = [...result.moves, ...lines].map((line) => line.replace(/^\s*[·+?-]\s+/, "").replace(/\s+\(move\)$/, ""));
     if (shown.length) new Notice(shown.join("\n"), 10000);
+  }
+
+  /** A reference with a DOI or an arXiv id, which the import window can find again. */
+  private identified(file: TFile): { id: string; name: string; path: string } | undefined {
+    if (!this.isReference(file)) return undefined;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const id = String(fm[PROP.doi] ?? "").trim() || String(fm[PROP.arxiv] ?? "").trim();
+    return id ? { id, name: file.basename, path: file.path } : undefined;
   }
 
   private isReference(file: TFile): boolean {
