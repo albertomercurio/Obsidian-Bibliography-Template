@@ -18,12 +18,32 @@ export class ArxivService {
       .replace(/v\d+$/, "");
 
     // Try Semantic Scholar first (richer data, may have DOI)
+    let preprint: PaperMetadata | undefined;
     try {
-      return await this.fetchSemanticScholar(id);
+      const record = await this.fetchSemanticScholar(id);
+      if (record.itemType !== "preprint") return record;
+      preprint = record;
     } catch {
-      // Fall back to arXiv Atom API
-      return await this.fetchArxivAtom(id);
+      // Semantic Scholar often refuses anonymous requests (429): arXiv below
     }
+
+    // arXiv's own record, which names the journal DOI once the authors add it:
+    // needed when Semantic Scholar failed, or knows only the preprint.
+    try {
+      const record = await this.fetchArxivAtom(id);
+      return record.itemType === "preprint" && preprint ? preprint : record;
+    } catch (err) {
+      if (preprint) return preprint;
+      throw err;
+    }
+  }
+
+  /** The published version, from Crossref, keeping the arXiv id. */
+  private async published(doi: string, id: string): Promise<PaperMetadata> {
+    const meta = await this.crossref.fetchByDOI(doi);
+    meta.arxivId = id;
+    meta.inputType = "arxiv";
+    return meta;
   }
 
   private async fetchSemanticScholar(id: string): Promise<PaperMetadata> {
@@ -42,11 +62,7 @@ export class ArxivService {
     // quality. Skip arXiv proxy DOIs (10.48550/arXiv.*) — those live on
     // DataCite and would 404 on Crossref; treat the paper as a preprint.
     if (doi && !/^10\.48550\/arxiv/i.test(doi)) {
-      const meta = await this.crossref.fetchByDOI(doi);
-      // Keep arXiv ID even if published
-      meta.arxivId = id;
-      meta.inputType = "arxiv";
-      return meta;
+      return await this.published(doi, id);
     }
 
     const authors: AuthorRaw[] = (data.authors ?? []).map((a: any) => ({
@@ -81,6 +97,17 @@ export class ArxivService {
       );
     }
     const xml = feedResp.text;
+
+    // The journal DOI the authors gave arXiv: the published version, when
+    // Crossref has it; otherwise the preprint below.
+    const journalDoi = extractXmlTag(xml, "arxiv:doi");
+    if (journalDoi && !/^10\.48550\/arxiv/i.test(journalDoi)) {
+      try {
+        return await this.published(journalDoi, id);
+      } catch {
+        // Crossref unreachable or without the DOI
+      }
+    }
 
     const title = extractXmlTag(xml, "title", 1) ?? "Untitled";
     const summary = extractXmlTag(xml, "summary");
