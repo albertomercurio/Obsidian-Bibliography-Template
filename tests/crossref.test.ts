@@ -32,7 +32,13 @@ test("a formula between words: the line breaks stay a space", async () => {
     `Superfluid\n                    <mml:math ${MML}>\n                      <mml:mmultiscripts>\n                        <mml:mi>He</mml:mi>\n                        <mml:mprescripts/>\n                        <mml:none/>\n                        <mml:mn>4</mml:mn>\n                      </mml:mmultiscripts>\n                    </mml:math>\n                    dynamics`
   );
   assert.match(meta.title, /^Superfluid \S.* dynamics$/);
-  assert.match(meta.titleLatex!, /^Superfluid \$[^$]+\$ dynamics$/);
+  // An isotope is a prescript: mathml-to-latex 1.5 wrote "\_{}^{4}He", a visible underscore
+  assert.equal(meta.titleLatex, "Superfluid ${}^{4}{He}$ dynamics");
+});
+
+test("brackets inside a formula pair up", async () => {
+  const meta = await record(`<mml:math ${MML}><mml:mi>SU</mml:mi><mml:mo>(</mml:mo><mml:mn>2</mml:mn><mml:mo>)</mml:mo></mml:math> gauge theory`);
+  assert.equal(meta.titleLatex, "$SU \\left(2\\right)$ gauge theory");
 });
 
 test("spaces written in the title are kept; only line breaks join", async () => {
