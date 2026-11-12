@@ -100,7 +100,7 @@ export class CrossrefService {
 
   async fetchByDOI(doi: string): Promise<PaperMetadata> {
     const clean = doi
-      .replace(/^https?:\/\/doi\.org\//i, "")
+      .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
       .replace(/^doi:/i, "")
       .trim();
 

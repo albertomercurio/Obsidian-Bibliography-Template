@@ -7,7 +7,8 @@
 import type { Box, PdfPage, PdfText } from "./ports";
 
 const DOI = /10\.\d{4,9}\/[^\s"<>{}]+/g;
-const ARXIV = /arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?/gi;
+/** "arXiv:2207.09470v2", and ids before 2007: "arXiv:quant-ph/0101001v1". */
+const ARXIV = /arXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?\/\d{7})(v\d+)?/gi;
 
 /** A DOI as printed, without the punctuation that follows it in the text. */
 function cleanDoi(raw: string): string {
