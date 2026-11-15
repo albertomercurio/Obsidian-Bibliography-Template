@@ -26,11 +26,12 @@ export function packageRelease(metafile) {
       .filter((entry) => entry.isFile() && /^(licen[cs]e|copying|notice|copyrightnotice)(\..*)?$/i.test(entry.name))
       .map((entry) => join(folder, entry.name));
     // Some packages keep additional attribution, e.g. ECharts' d3 notice, here.
-    for (const sub of ["licenses", "LICENSES"]) {
-      const dir = join(folder, sub);
-      if (existsSync(dir)) {
-        files.push(...readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => join(dir, entry.name)));
-      }
+    // Enumerate the actual spelling once: on case-insensitive filesystems,
+    // probing both "licenses" and "LICENSES" would read the same folder twice.
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^licenses$/i.test(entry.name)) continue;
+      const dir = join(folder, entry.name);
+      files.push(...readdirSync(dir, { withFileTypes: true }).filter((file) => file.isFile()).map((file) => join(dir, file.name)));
     }
     if (!files.length) throw new Error(`Missing licence text for bundled dependency ${name}`);
     notices.push(`${name} (${pkg.license ?? "see licence below"})\n${files.sort().map((file) => `\n--- ${relative(folder, file)} ---\n${readFileSync(file, "utf8").replace(/\r\n?/g, "\n").trim()}`).join("\n")}`);
