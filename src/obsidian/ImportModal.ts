@@ -56,7 +56,7 @@ export class ImportModal extends Modal {
           this.submit();
         }
       });
-      setTimeout(() => text.inputEl.focus(), 50);
+      window.setTimeout(() => text.inputEl.focus(), 50);
     });
 
     new Setting(contentEl)
@@ -74,8 +74,7 @@ export class ImportModal extends Modal {
         .setDesc("Supplementary material, other versions: after the main PDF, as <citation key>-2.pdf, -3.pdf…")
         .setHeading();
       const list = contentEl.createDiv({ cls: "research-importer-more-pdfs" });
-      list.style.maxHeight = "12em";
-      list.style.overflowY = "auto";
+      list.addClass("research-importer-pdf-list");
       for (const path of this.choices.pdfs) {
         new Setting(list).setName(path).addToggle((toggle) =>
           toggle.setValue(false).onChange((on) => {

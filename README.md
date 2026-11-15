@@ -2,6 +2,32 @@
 
 An Obsidian plugin that imports papers and books from a DOI or an arXiv ID, with linked notes for authors and journals, and a BibTeX entry you can check against its source. It needs nothing else: any vault can use it, on desktop and mobile.
 
+## Installation
+
+Download `main.js`, `manifest.json`, `styles.css` from a published
+[GitHub release](https://github.com/albertomercurio/Obsidian-Bibliography-Template/releases).
+Inside your vault's configuration folder (normally `.obsidian`), create
+`plugins/research-importer/` and put those files directly inside it. Reload Obsidian,
+then enable **Research Literature Manager** under **Settings → Community plugins**.
+Each plugin can be installed on its own; no companion plugin or personal vault is required.
+
+The minimum Obsidian version is **1.6.6**. The plugin supports desktop and mobile.
+After the plugin is accepted into the community directory, it will also be
+available through Obsidian's built-in plugin browser.
+
+## First import
+
+1. In the plugin settings, choose your folders for articles, books, people and
+   journals. Defaults are `Articles`, `Books`, `People` and `Journals`.
+2. Open the command palette and run **Research Literature Manager: Import paper
+   from DOI or arXiv ID**, or use the book icon in the ribbon.
+3. Paste a DOI, DOI link or arXiv ID and review any author-matching questions.
+   The plugin creates linked Markdown notes and their BibTeX.
+
+Templates, a PDF folder, a cover property and a log note are optional. To make
+covers, set **Cover property** to `Cover`, then choose a PDF or use the clipboard
+action. PDF reading and image extraction happen locally.
+
 ## What it does
 
 - **Import paper from DOI or arXiv ID.** Fetches the record (Crossref, Semantic Scholar, arXiv, Open Library), creates the article or book note and a note for each new author and journal. Asks before merging an author who may already exist. A link works too (doi.org, arxiv.org), and so does an arXiv ID of before 2007, such as `quant-ph/0101001`. An arXiv ID gives the published version when Semantic Scholar or the arXiv record names its DOI.
@@ -51,10 +77,31 @@ obsidian-cli research-importer:lint [all] [format=json]                         
 
 `export` lists what it leaves out (no entry, a citation key already used) as `%` comments before the entries. With a log note in the settings, `add`, `cover` and `check` add what they wrote to it, with `apply`.
 
+## Privacy and network use
+
+Importing, refreshing and checking against a source use these public services:
+
+| Service | Purpose and information sent |
+| --- | --- |
+| Crossref (`api.crossref.org`) | Fetch publication metadata by DOI; sends the DOI. |
+| arXiv (`arxiv.org`, `export.arxiv.org`) | Fetch preprint records and publication links; sends the arXiv ID. |
+| Semantic Scholar (`api.semanticscholar.org`) | Look up an arXiv preprint's published version; sends the arXiv ID. |
+| Open Library (`openlibrary.org`) | Fetch book and author records; sends an ISBN or an Open Library record identifier. |
+| ORCID (`pub.orcid.org`) | Fetch public researcher records and optionally search by author name; sends an ORCID ID or the author's given and family names. Enable **Skip ORCID name search** to omit name searches. |
+
+Remote services receive the requested identifiers and, when enabled, author names;
+their own terms and logging apply. The plugin has no telemetry, requires no paid
+account or API key, and does not upload note bodies, PDF files or clipboard images.
+Offline reference checks and BibTeX export use the vault only. PDFs are read from
+the vault; clipboard images are accessed only when you invoke the paste action.
+Files are written inside the current vault. The desktop clipboard fallback uses
+Electron only on desktop; the rest of the plugin also works on mobile.
+
 ## Development
 
 ```sh
 npm ci
+npm run lint
 npm test
 VAULT=/path/to/vault npm test                          # also checks a real vault: offline check, export
 npm run typecheck
@@ -63,3 +110,13 @@ VAULT_PLUGIN_DIR=/path/to/plugin/folder npm run build  # also installs it there
 ```
 
 `src/` is the core, with no dependency on Obsidian or Node: it talks to its host through `src/ports.ts`. `src/obsidian/` is the plugin's host; `src/node/` reads a vault from disk, for the tests and for `VAULT=… npm test`, which runs where Obsidian is not available (CI). The commands of the command line are in `src/CommandLine.ts`, and their preview in `src/StagedVault.ts`.
+
+## Support and licence
+
+Report bugs and request features in this repository's **Issues**, including your
+Obsidian version, operating system, plugin version and a minimal example with
+synthetic data. Please leave private notes and personal data out of reports.
+
+MIT licence; see [LICENSE](LICENSE). Bundled dependencies retain their own licences;
+see [third-party attribution](THIRD_PARTY_NOTICES.md). Release preparation and
+the manual community-directory submission are described in [PUBLISHING.md](PUBLISHING.md).

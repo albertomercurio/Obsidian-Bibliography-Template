@@ -1,27 +1,43 @@
 {
   "name": "research-importer",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "description": "Obsidian plugin: Research Literature Manager",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit -p .",
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "lint": "eslint .",
+    "check:release": "node scripts/check-release.mjs",
+    "version": "node scripts/version-bump.mjs"
   },
   "keywords": [],
   "author": "Alberto Mercurio",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "builtin-modules": "^3.3.0",
     "esbuild": "0.21.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-obsidianmd": "0.6.0",
     "obsidian": "latest",
     "tslib": "2.6.2",
-    "typescript": "5.4.5"
+    "typescript": "5.4.5",
+    "typescript-eslint": "8.72.2"
   },
   "dependencies": {
     "mathml-to-latex": "^1.8.0",
     "yaml": "2.8.3"
   },
-  "private": true
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/albertomercurio/Obsidian-Bibliography-Template.git"
+  },
+  "homepage": "https://github.com/albertomercurio/Obsidian-Bibliography-Template#readme",
+  "bugs": {
+    "url": "https://github.com/albertomercurio/Obsidian-Bibliography-Template/issues"
+  },
+  "engines": {
+    "node": ">=24"
+  }
 }

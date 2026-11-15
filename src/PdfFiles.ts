@@ -28,7 +28,7 @@ export function identifierOf(pages: PdfPage[]): string {
   const all: string[] = [];
   for (const match of text.matchAll(DOI)) {
     const doi = cleanDoi(match[0]);
-    const before = text.slice(Math.max(0, match.index! - 12), match.index).toLowerCase();
+    const before = text.slice(Math.max(0, match.index - 12), match.index).toLowerCase();
     if (/(doi\s*[:.]?\s*|doi\.org\/)$/.test(before) && !labelled.some((d) => d.toLowerCase() === doi.toLowerCase())) labelled.push(doi);
     if (!all.some((d) => d.toLowerCase() === doi.toLowerCase())) all.push(doi);
   }

@@ -1,6 +1,6 @@
 import { Notice, Plugin, TFile, type CliData, type CliFlags } from "obsidian";
 import { DEFAULT_SETTINGS, ResearchImporterSettingTab } from "./src/obsidian/settings";
-import type { PluginSettings } from "./src/types";
+import type { PaperMetadata, PluginSettings } from "./src/types";
 import { VaultIndex } from "./src/VaultIndex";
 import { NoteCreator } from "./src/NoteCreator";
 import { ImportService } from "./src/ImportService";
@@ -333,7 +333,7 @@ export default class ResearchImporterPlugin extends Plugin {
     // The new note's properties reach the metadata cache a moment after it is written.
     const created = this.app.vault.getAbstractFileByPath(note.path);
     for (let i = 0; i < 60 && created instanceof TFile && !this.app.metadataCache.getFileCache(created)?.frontmatter?.[PROP.bibtex]; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
     }
     const lines: string[] = [];
     const vault = new StagedVault(this.vaultPort, obsidianYaml, true);
@@ -480,7 +480,7 @@ export default class ResearchImporterPlugin extends Plugin {
         // existing entry, so regenerating never loses them.
         const existing = typeof fm[PROP.bibtex] === "string" ? fm[PROP.bibtex] : undefined;
         const old = bibtexFields(existing);
-        const metadata = {
+        const metadata: PaperMetadata = {
           inputType: "doi" as const,
           doi: fm[PROP.doi] ?? old.doi,
           arxivId: fm[PROP.arxiv] != null ? String(fm[PROP.arxiv]) : old.eprint,
@@ -492,7 +492,7 @@ export default class ResearchImporterPlugin extends Plugin {
           pages: old.pages,
           publisher: old.publisher,
           isbn: fm[PROP.isbn] ?? old.isbn,
-          itemType: (fm[PROP.type] === TYPES.book ? "book" : "article") as "article" | "book",
+          itemType: fm[PROP.type] === TYPES.book ? "book" : "article",
         };
         const journalAbbrev = journalAbbreviation(fm[PROP.journal], this.vaultPort) ?? old.journal;
         // When only some authors are linked (large collaborations), keep the full list.

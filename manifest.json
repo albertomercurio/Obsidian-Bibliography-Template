@@ -1,10 +1,10 @@
 {
   "id": "research-importer",
   "name": "Research Literature Manager",
-  "version": "2.10.0",
-  "minAppVersion": "1.5.7",
+  "version": "2.10.1",
+  "minAppVersion": "1.6.6",
   "description": "Import papers from DOI or arXiv ID with full author, journal, and BibTeX management.",
   "author": "Alberto Mercurio",
-  "authorUrl": "",
+  "authorUrl": "https://github.com/albertomercurio",
   "isDesktopOnly": false
 }

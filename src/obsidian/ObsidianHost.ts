@@ -1,7 +1,7 @@
 // The Obsidian side of the ports: vault access through Obsidian's APIs (which
 // keep links up to date on rename) and questions through modals.
 
-import { App, loadPdfJs, normalizePath, Notice, parseYaml, requestUrl, stringifyYaml, TFile } from "obsidian";
+import { App, loadPdfJs, normalizePath, Notice, parseYaml, Platform, requestUrl, stringifyYaml, TFile } from "obsidian";
 import type { Box, DisambiguationData, DisambiguationResult, Frontmatter, Http, NoteRef, PdfPage, PdfPort, PdfText, Ui, VaultPort } from "../ports";
 import type { YamlCodec } from "../StagedVault";
 import { AuthorOverflowModal } from "./AuthorOverflowModal";
@@ -217,7 +217,7 @@ export class ObsidianUi implements Ui {
   }
 
   open(basename: string): void {
-    this.app.workspace.openLinkText(basename, "", false);
+    void this.app.workspace.openLinkText(basename, "", false);
   }
 }
 
@@ -234,10 +234,11 @@ export async function clipboardImage(): Promise<{ data: ArrayBuffer; ext: string
     // Not allowed or not supported here: Electron's clipboard below, on desktop.
   }
   try {
+    if (!Platform.isDesktopApp) return null;
     const image = (window as any).require?.("electron")?.clipboard?.readImage?.();
     if (image && !image.isEmpty()) {
       const png: Uint8Array = image.toPNG();
-      return { data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, ext: "png" };
+      return { data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength), ext: "png" };
     }
   } catch {
     // Mobile: no Electron.

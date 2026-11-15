@@ -17,7 +17,7 @@ import { OpenLibraryService } from "./OpenLibraryService";
 function joinMath(raw: string): string {
   return raw
     .replace(/(<\/(?:[a-z]+:)?math>)\s*\n\s*(?=[-,.;:)\]'’])/gi, "$1")
-    .replace(/([-(\[])\s*\n\s*(?=<(?:[a-z]+:)?math[\s>])/gi, "$1");
+    .replace(/([-([])\s*\n\s*(?=<(?:[a-z]+:)?math[\s>])/gi, "$1");
 }
 
 /**

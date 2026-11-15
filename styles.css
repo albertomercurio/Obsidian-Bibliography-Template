@@ -126,3 +126,8 @@
 .research-importer-issues .research-importer-hint {
   margin-bottom: 0;
 }
+
+.research-importer-pdf-list {
+  max-height: 12em;
+  overflow-y: auto;
+}

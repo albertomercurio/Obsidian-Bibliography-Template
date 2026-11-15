@@ -44,7 +44,7 @@ export class StagedVault implements VaultPort {
     if (yaml === null) return undefined;
     try {
       const data = this.yaml.parse(yaml);
-      return data && typeof data === "object" && !Array.isArray(data) ? (data as Frontmatter) : {};
+      return data && typeof data === "object" && !Array.isArray(data) ? data : {};
     } catch {
       return undefined;
     }
